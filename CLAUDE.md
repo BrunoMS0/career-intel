@@ -96,10 +96,30 @@ Add HNSW past a few thousand rows.
 
 Phases 1-3 done: setup, ingestion, retrieval and grounded chat with citations.
 
-Next, phase 4 — guardrails and observability: a score threshold that skips the
-model call when retrieval comes back weak, refusal rules, and a `query_logs`
-table feeding the eval. Then phase 5 (eval harness) and phase 6 (UI polish, app
-Dockerfile).
+**In progress: swapping the PDF parser for LlamaParse.** The user decided to
+adopt it; the agreement is to measure it against `unpdf` on the seven real
+documents before deleting anything, the same way every other choice here was
+settled. Notes for that work:
+
+- Use `llama-cloud-services` (0.5.4). `llama-parse` on npm is a 0.1.0 community
+  client and `@llamaindex/cloud` is deprecated. Key in `LLAMA_CLOUD_API_KEY`.
+- The parser is isolated behind `extractOrderedText(data) => string` in
+  `lib/pdf.ts`, so a second implementation is a same-signature module.
+- LlamaParse returns markdown. If it wins, most of `lib/chunk.ts` goes away —
+  the vocabulary, the caps rule, the Title-Case-above-a-bullet rule and its
+  three guards all exist only to guess which line is a heading, and markdown
+  states it. Keep `splitBySize`, `enrich` and `unlabeledShare`.
+- Markdown also makes heading depth explicit (`#` vs `##`), which the current
+  flat `section` column throws away: in Job #6, `Required` is really a child of
+  `What You Bring`. That would let parent expansion climb to the right parent
+  instead of a flat section.
+- Costs that belong in the README: it is a hosted service, so documents are
+  uploaded to a third party (the user's real resume among them) and ingestion
+  stops working offline.
+
+Then phase 4 (guardrails and observability: a score threshold that skips the
+model call when retrieval is weak, refusal rules, a `query_logs` table), phase 5
+(eval harness) and phase 6 (UI polish, app Dockerfile).
 
 Known and deliberate, not yet fixed:
 
