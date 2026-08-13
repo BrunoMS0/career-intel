@@ -6,7 +6,9 @@ create extension if not exists vector;
 create table documents (
   id         uuid primary key default gen_random_uuid(),
   kind       text not null check (kind in ('resume', 'job')),
-  label      text not null,          -- user-facing handle, e.g. "Job #2"
+  -- User-facing handle, e.g. "Job #2". Unique because queries scope by it:
+  -- two documents sharing a label would make "Job #2" ambiguous.
+  label      text not null unique,
   filename   text not null,
   content    text not null,
   created_at timestamptz not null default now()
@@ -18,6 +20,10 @@ create table chunks (
   id          uuid primary key default gen_random_uuid(),
   document_id uuid not null references documents(id) on delete cascade,
   position    int not null,           -- order within the document
+  -- Heading this chunk sat under. Doubles as the grouping key for parent
+  -- expansion, which is why there is no separate sections table: it would
+  -- store one string and never be queried on its own.
+  section     text not null,
   content     text not null,
   embedding   vector(1536) not null,  -- text-embedding-3-small
   created_at  timestamptz not null default now()
