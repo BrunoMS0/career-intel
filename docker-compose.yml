@@ -1,0 +1,25 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: career-intel-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: career_intel
+    ports:
+      # A locally installed Postgres already owning this port answers the
+      # connection and rejects it as "password authentication failed", which
+      # reads like a config bug rather than a port clash. Override DB_PORT.
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, only when the volume is empty. Drop the volume to re-apply.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d career_intel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
