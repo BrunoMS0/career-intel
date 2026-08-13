@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.43",
-    "ai": "^7.0.62",
+    "@ai-sdk/react": "^4.0.67",
+    "ai": "^7.0.64",
     "next": "16.3.0",
     "postgres": "^3.4.9",
     "react": "19.2.8",
