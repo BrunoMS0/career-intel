@@ -54,6 +54,54 @@ test("detects the second-person headings job postings use", () => {
   }
 });
 
+test("detects an invented section name when a list starts under it", () => {
+  // From a real posting. No vocabulary would ever cover these.
+  for (const heading of ["Focus", "Skill Set", "This Role Offers", "Backend & DevOps"]) {
+    const sections = chunkDocument(`Intro line.\n${heading}\n● Own complete product slices`).map(
+      (c) => c.section,
+    );
+    assert.deepEqual(sections, ["Overview", heading], `missed: ${heading}`);
+  }
+});
+
+test("does not promote a bullet item that reads like a title", () => {
+  // "● Competitive Salary and Stock Option Plan" is title case and sits above
+  // another bullet, so only the list marker tells it apart from a heading.
+  const posting = [
+    "Benefits",
+    "● Competitive Salary and Stock Option Plan",
+    "● Short Term & Long Term Disability",
+    "● Paid time off and company holidays",
+  ].join("\n");
+
+  const sections = new Set(chunkDocument(posting).map((c) => c.section));
+  assert.deepEqual([...sections], ["Benefits"]);
+});
+
+test("does not promote a wrapped bullet line sitting above the next bullet", () => {
+  const posting = [
+    "REQUIREMENTS",
+    "● Build and maintain vector stores using tools such as FAISS,",
+    "Chroma, Weaviate, or pgvector",
+    "● Optimize retrieval strategies including hybrid search",
+  ].join("\n");
+
+  const sections = new Set(chunkDocument(posting).map((c) => c.section));
+  assert.deepEqual([...sections], ["REQUIREMENTS"]);
+});
+
+test("does not promote an employer line that happens to precede bullets", () => {
+  const resume = "EXPERIENCE\nSenior Frontend Engineer\nAcme Corp, 2020-2024\n- Led the migration to React 18";
+  const sections = new Set(chunkDocument(resume).map((c) => c.section));
+  assert.deepEqual([...sections], ["EXPERIENCE"]);
+});
+
+test("ignores a metadata row carrying a vocabulary word", () => {
+  const posting = "Employment Type: Full-time\nLocation: Remote\nREQUIREMENTS\n- 5+ years of React";
+  const sections = chunkDocument(posting).map((c) => c.section);
+  assert.deepEqual(sections, ["Overview", "REQUIREMENTS"]);
+});
+
 test("does not mistake a sentence starting with You for a heading", () => {
   const posting = "REQUIREMENTS\nYou will own the component library\nYour code ships weekly, reviewed by peers.";
   const sections = new Set(chunkDocument(posting).map((c) => c.section));

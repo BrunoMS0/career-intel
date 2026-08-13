@@ -16,7 +16,7 @@ const OVERVIEW = "Overview";
  * Anything outside this list is caught by the phrase or shape checks below.
  */
 const KNOWN_HEADINGS =
-  /^(work |professional )?(experience|employment|education|skills|technical skills|projects|certifications|publications|awards|languages|summary|profile|objective|about|mission|responsibilities|requirements|required|preferred|qualifications|benefits|perks|nice to have|compensation|contact)\b/i;
+  /^(work |professional |role |position |job )?(experience|employment|education|skills|technical skills|projects|certifications|publications|awards|languages|summary|overview|profile|objective|about|mission|responsibilities|requirements|required|preferred|qualifications|benefits|perks|nice to have|compensation|contact)\b/i;
 
 /**
  * Job postings title their sections by addressing the reader: "What You'll
@@ -28,14 +28,48 @@ const KNOWN_HEADINGS =
  */
 const HEADING_PHRASES = /^(what|who|why)\s+(you|we|this)['’]?\w*\b|^your(\s+\p{L}+){1,3}$/iu;
 
+/** A list marker opening the next line. */
+const BULLET = /^\s*(?:[●•▪◦‣*·]|[-–—]\s)/u;
+/** Metadata rows like "Location: Remote", never a section name. */
+const INLINE_LABEL = /\S:\s+\S/;
+
+const CONNECTORS = new Set([
+  "a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with",
+]);
+
+function isTitleCase(text: string): boolean {
+  const words = text.split(/[\s/&|-]+/).filter((word) => /\p{L}/u.test(word));
+  if (words.length === 0 || words.length > 6) return false;
+
+  return words.every((word) => {
+    if (CONNECTORS.has(word.toLowerCase())) return true;
+    const first = word.match(/\p{L}/u)![0];
+    return first === first.toUpperCase();
+  });
+}
+
 function isHeading(line: string, next: string | undefined): boolean {
   const text = line.trim().replace(/[:\s]+$/, "");
   if (!text || text.length > 60) return false;
+  // An item in a list is never the name of one.
+  if (BULLET.test(line)) return false;
   // A heading introduces something. A short line closing a page does not.
   if (!next?.trim()) return false;
   if (/[.,;]$/.test(text)) return false;
+  // "Employment Type: Full-time" carries a vocabulary word but names a field,
+  // not a section.
+  if (INLINE_LABEL.test(text)) return false;
 
   if (KNOWN_HEADINGS.test(text) || HEADING_PHRASES.test(text)) return true;
+
+  // Title case, but only when a list starts right underneath. Real postings
+  // invent their own section names -- "Focus", "Skill Set", "Backend & DevOps"
+  // -- which no vocabulary will ever cover, and a list is what they introduce.
+  // The bullet is what keeps this safe on resumes: a job title there is
+  // followed by the employer, never by a list. Commas and digits are excluded
+  // because "Acme Corp, 2020-2024" and a wrapped bullet line like "Chroma,
+  // Weaviate, or pgvector" both otherwise look like title case above a bullet.
+  if (BULLET.test(next) && !/[,\d]/.test(text) && isTitleCase(text)) return true;
 
   // Shape fallback for headings we have no vocabulary for, including other
   // languages ("EXPERIENCIA LABORAL"). Caps only, deliberately: title case is
