@@ -1,6 +1,6 @@
-import { sql } from "./db";
-import { embedForQuery, toVector } from "./embedding";
-import type { DocumentKind } from "./ingest";
+import { sql } from "./db.ts";
+import { embedForQuery, toVector } from "./embedding.ts";
+import type { DocumentKind } from "./ingest.ts";
 
 export type RetrievedSection = {
   label: string;

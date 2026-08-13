@@ -1,7 +1,9 @@
-import { chunkDocument, enrich, unlabeledShare } from "./chunk";
-import { sql } from "./db";
-import { embedForIndex, toVector } from "./embedding";
-import { extractOrderedText } from "./pdf";
+// Explicit .ts extensions: scripts/ and the eval harness import these modules
+// through plain Node, which does not resolve extensionless specifiers.
+import { chunkDocument, enrich, unlabeledShare } from "./chunk.ts";
+import { sql } from "./db.ts";
+import { embedForIndex, toVector } from "./embedding.ts";
+import { extractOrderedText } from "./pdf.ts";
 
 export type DocumentKind = "resume" | "job";
 
