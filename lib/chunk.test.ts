@@ -36,6 +36,30 @@ Acme Corp, 2020-2024
   assert.deepEqual([...sections], ["EXPERIENCE"]);
 });
 
+test("detects the second-person headings job postings use", () => {
+  // Straight from a real posting. The apostrophe is Word's U+2019, and none of
+  // these are in the vocabulary list -- they match by phrasing pattern.
+  const headings = [
+    "What You’ll Do",
+    "What You Bring",
+    "What We Offer",
+    "What We're Looking For",
+    "Who You Are",
+    "Your Mission",
+  ];
+
+  for (const heading of headings) {
+    const sections = chunkDocument(`Intro line.\n${heading}\n- a requirement`).map((c) => c.section);
+    assert.deepEqual(sections, ["Overview", heading], `missed: ${heading}`);
+  }
+});
+
+test("does not mistake a sentence starting with You for a heading", () => {
+  const posting = "REQUIREMENTS\nYou will own the component library\nYour code ships weekly, reviewed by peers.";
+  const sections = new Set(chunkDocument(posting).map((c) => c.section));
+  assert.deepEqual([...sections], ["REQUIREMENTS"]);
+});
+
 test("falls back to one Overview section when no headings exist", () => {
   const flat = "just a line of text\nand another one\nwith no structure at all";
   const chunks = chunkDocument(flat);

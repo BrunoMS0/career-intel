@@ -13,10 +13,20 @@ const OVERVIEW = "Overview";
 
 /**
  * Headings that appear verbatim in most English resumes and job postings.
- * Anything outside this list is caught by the shape check in `isHeading`.
+ * Anything outside this list is caught by the phrase or shape checks below.
  */
 const KNOWN_HEADINGS =
-  /^(work |professional )?(experience|employment|education|skills|technical skills|projects|certifications|publications|awards|languages|summary|profile|objective|about|responsibilities|requirements|qualifications|what you'?ll do|what we'?re looking for|benefits|perks|nice to have|compensation|contact)\b/i;
+  /^(work |professional )?(experience|employment|education|skills|technical skills|projects|certifications|publications|awards|languages|summary|profile|objective|about|mission|responsibilities|requirements|required|preferred|qualifications|benefits|perks|nice to have|compensation|contact)\b/i;
+
+/**
+ * Job postings title their sections by addressing the reader: "What You'll
+ * Do", "What You Bring", "What We Offer", "Who You Are", "Your Mission".
+ * Matching the pattern covers the family; listing the phrases chases it.
+ *
+ * The apostrophe class matters: these documents come out of Word, which
+ * autocorrects ' into the typographic U+2019.
+ */
+const HEADING_PHRASES = /^(what|who|why)\s+(you|we|this)['’]?\w*\b|^your(\s+\p{L}+){1,3}$/iu;
 
 function isHeading(line: string, next: string | undefined): boolean {
   const text = line.trim().replace(/[:\s]+$/, "");
@@ -25,12 +35,21 @@ function isHeading(line: string, next: string | undefined): boolean {
   if (!next?.trim()) return false;
   if (/[.,;]$/.test(text)) return false;
 
-  if (KNOWN_HEADINGS.test(text)) return true;
+  if (KNOWN_HEADINGS.test(text) || HEADING_PHRASES.test(text)) return true;
 
   // Shape fallback for headings we have no vocabulary for, including other
   // languages ("EXPERIENCIA LABORAL"). Caps only, deliberately: title case is
   // how resumes write job titles and company names, so accepting it would
   // shred the Experience section into one section per employer.
+  //
+  // ponytail: font size is the tempting signal here, since PDFs expose it per
+  // item and headings are visually larger. Measured against both real
+  // documents it does not separate cleanly -- a resume's section headings run
+  // 13pt over a 9.5pt body (1.37x) while its job titles run 10.5pt (1.10x),
+  // and the job posting's headings are 13pt over an 11pt body (1.18x). Any
+  // threshold catching the posting also promotes every employer in the resume
+  // to a section. Revisit with size plus boldness if a document needs it;
+  // `pnpm inspect <file.pdf>` shows what a new one detects.
   const letters = text.replace(/[^\p{L}]/gu, "");
   return letters.length >= 3 && letters === letters.toUpperCase();
 }
