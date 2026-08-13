@@ -189,6 +189,27 @@ export function chunkDocument(text: string): Chunk[] {
 }
 
 /**
+ * Share of the document, by characters, that came out with no heading above it.
+ *
+ * There is no way to tell that one chunk landed under the wrong heading without
+ * knowing the right answer, which is what the eval harness is for. This catches
+ * the coarser failure: a layout the detector did not recognise at all, where
+ * everything falls through to the size-based split and the section column stops
+ * carrying information. Left unreported that is silent, and a silent
+ * degradation is the kind you ship.
+ */
+export function unlabeledShare(chunks: Chunk[]): number {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.content.length, 0);
+  if (total === 0) return 0;
+
+  const unlabeled = chunks
+    .filter((chunk) => chunk.section === OVERVIEW)
+    .reduce((sum, chunk) => sum + chunk.content.length, 0);
+
+  return unlabeled / total;
+}
+
+/**
  * The text actually sent to the embedding model. Chunks are stored bare so
  * citations stay clean, and the lineage is prepended only here, where it
  * changes the vector.

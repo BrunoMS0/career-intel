@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { chunkDocument } from "../lib/chunk.ts";
+import { chunkDocument, unlabeledShare } from "../lib/chunk.ts";
 import { extractOrderedText } from "../lib/pdf.ts";
 
 /**
@@ -23,7 +23,8 @@ if (flag === "--text") {
 }
 
 const chunks = chunkDocument(text);
-console.log(`${text.length} chars -> ${chunks.length} chunks\n`);
+const unlabeled = Math.round(unlabeledShare(chunks) * 100);
+console.log(`${text.length} chars -> ${chunks.length} chunks, ${unlabeled}% unlabeled\n`);
 for (const chunk of chunks) {
   const preview = chunk.content.replace(/\n/g, " | ").slice(0, 70);
   console.log(`[${chunk.position}] ${chunk.section} (${chunk.content.length}): ${preview}`);

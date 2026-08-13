@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chunkDocument, enrich } from "./chunk.ts";
+import { chunkDocument, enrich, unlabeledShare } from "./chunk.ts";
 
 const JOB = `Senior Frontend Engineer
 Acme Corp — Remote
@@ -139,6 +139,15 @@ test("does not leave a stray short tail chunk", () => {
     chunks.every((c) => c.content.length >= 120),
     `short chunk among: ${chunks.map((c) => c.content.length).join(", ")}`,
   );
+});
+
+test("reports a document whose layout was not recognised", () => {
+  const unstructured = "a line of text\nand another one\nwith no structure at all";
+  assert.equal(unlabeledShare(chunkDocument(unstructured)), 1);
+
+  // A preamble before the first heading is normal and must not trip the alarm.
+  assert.ok(unlabeledShare(chunkDocument(JOB)) < 0.5);
+  assert.equal(unlabeledShare([]), 0);
 });
 
 test("enrich prefixes lineage without touching the stored content", () => {
