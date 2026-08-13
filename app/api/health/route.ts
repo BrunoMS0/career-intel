@@ -17,8 +17,8 @@ export async function GET() {
       ok: true,
       pgvector: ext?.version ?? null,
       documents: docs.count,
-      // Presence only. Validating the key would mean a paid call per ping.
-      openaiKey: Boolean(process.env.OPENAI_API_KEY),
+      // Presence only. Validating the key would mean an API call per ping.
+      googleKey: Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY),
     });
   } catch (error) {
     return Response.json(

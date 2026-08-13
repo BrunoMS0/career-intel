@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { google } from "@ai-sdk/google";
 import { embedMany } from "ai";
 import { extractText } from "unpdf";
 import { chunkDocument, enrich } from "./chunk";
@@ -6,8 +6,16 @@ import { sql } from "./db";
 
 export type DocumentKind = "resume" | "job";
 
-// 1536 dimensions, matching the vector(1536) column in db/schema.sql.
-const embeddingModel = openai.textEmbeddingModel("text-embedding-3-small");
+const embeddingModel = google.textEmbeddingModel("gemini-embedding-001");
+
+/**
+ * Gemini emits 3072 dimensions by default; we ask for 1536 to match the
+ * vector(1536) column in db/schema.sql. Reduced-dimension output is not
+ * normalized, which is fine because retrieval ranks with pgvector's `<=>`
+ * (cosine), and cosine ignores magnitude. Switching to `<->` or `<#>` would
+ * mean normalizing these vectors first.
+ */
+export const EMBEDDING_DIMENSIONS = 1536;
 
 export class IngestError extends Error {
   constructor(
@@ -45,6 +53,16 @@ export async function ingest(input: {
   const { embeddings } = await embedMany({
     model: embeddingModel,
     values: chunks.map((chunk) => enrich(chunk, input.label)),
+    providerOptions: {
+      google: {
+        outputDimensionality: EMBEDDING_DIMENSIONS,
+        // Gemini embeds asymmetrically: stored passages and search queries go
+        // through different task types, so a question lands near the passage
+        // that answers it rather than near other questions. The query side
+        // uses RETRIEVAL_QUERY and must stay paired with this.
+        taskType: "RETRIEVAL_DOCUMENT",
+      },
+    },
   });
 
   return sql.begin(async (tx) => {
