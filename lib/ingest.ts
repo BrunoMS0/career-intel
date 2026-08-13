@@ -1,8 +1,8 @@
 import { google } from "@ai-sdk/google";
 import { embedMany } from "ai";
-import { extractText } from "unpdf";
 import { chunkDocument, enrich } from "./chunk";
 import { sql } from "./db";
+import { extractOrderedText } from "./pdf";
 
 export type DocumentKind = "resume" | "job";
 
@@ -36,10 +36,7 @@ export async function ingest(input: {
   kind: DocumentKind;
   label: string;
 }) {
-  const { text } = await extractText(new Uint8Array(await input.file.arrayBuffer()), {
-    mergePages: true,
-  });
-
+  const text = await extractOrderedText(new Uint8Array(await input.file.arrayBuffer()));
   const chunks = chunkDocument(text);
   if (chunks.length === 0) {
     // unpdf reads the text layer, which a scanned or image-only PDF does not
