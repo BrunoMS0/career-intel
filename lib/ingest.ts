@@ -67,6 +67,15 @@ export async function ingest(input: {
   const embeddings = await embedForIndex(chunks.map((chunk) => enrich(chunk, input.label)));
 
   return sql.begin(async (tx) => {
+    // A new resume replaces the one already indexed rather than joining it:
+    // the app compares one candidate, and db/schema.sql holds that invariant
+    // with a partial unique index. Same transaction as the insert, so a failed
+    // parse cannot leave the user with no resume at all.
+    const replaced =
+      input.kind === "resume"
+        ? await tx<{ label: string }[]>`delete from documents where kind = 'resume' returning label`
+        : [];
+
     const [document] = await tx<{ id: string }[]>`
       insert into documents (kind, label, filename, content)
       values (${input.kind}, ${input.label}, ${input.file.name}, ${markdown})
@@ -103,6 +112,7 @@ export async function ingest(input: {
       id: document.id,
       label: input.label,
       chunks: chunks.length,
+      replaced: replaced[0]?.label,
       sections: [...new Set(chunks.map((chunk) => chunk.section))],
       warning: warnings.length
         ? `${warnings.join(" ")} Run \`pnpm compare <file.pdf>\` to see what was parsed.`

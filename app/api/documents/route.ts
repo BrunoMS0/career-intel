@@ -64,12 +64,11 @@ export async function POST(request: Request) {
     if ((error as { code?: string }).code === "23505") {
       // Two different uniques land here, and saying the wrong one sends the
       // user off renaming a file that was never the problem.
+      // Uploading a resume replaces the existing one, so this only fires when
+      // two uploads race and both clear the way for themselves.
       if ((error as { constraint_name?: string }).constraint_name === RESUME_CONSTRAINT) {
         return Response.json(
-          {
-            error:
-              "a resume is already indexed. This app compares one candidate against several postings, so remove the existing resume before adding another.",
-          },
+          { error: "another resume was indexed at the same time. Try again." },
           { status: 409 },
         );
       }
