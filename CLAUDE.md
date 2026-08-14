@@ -88,7 +88,17 @@ boundary, so there is no mid-thought break to repair.
 **No vector index.** Under a hundred chunks scan in well under a millisecond.
 Add HNSW past a few thousand rows.
 
-**Reranking deferred** until the eval harness shows whether it helps.
+**A score threshold has to be relative, not absolute.** Cosine distances here
+are not calibrated across questions: the best hit for "what skills am I missing
+for Job #3?" is 0.2441 while for "which role fits me best?" it is 0.3556, and
+both questions have good answers. A fixed cutoff at 0.30 would answer the first
+and refuse the second. Whatever phase 4 does, it has to measure against the best
+hit for that query rather than against a constant. `pnpm retrieve --chunks`
+prints the numbers to check this against.
+
+**Reranking deferred** until the eval harness shows whether it helps. It also
+only becomes worth measuring now that top-k covers every posting: a reranker
+cannot rescue a document that never entered the candidate list.
 
 ## Gotchas
 
@@ -153,16 +163,18 @@ its own deprecation notice (maintained to 1 May 2026, successor
 ingest path — only `splitBySize`, `enrich` and `unlabeledShare` are. They still
 back `pnpm inspect` and the unpdf column of `pnpm compare`.
 
-Then phase 4 (guardrails and observability: a score threshold that skips the
-model call when retrieval is weak, refusal rules, a `query_logs` table), phase 5
-(eval harness) and phase 6 (UI polish, app Dockerfile).
+Also done since: chunks rank per document rather than per kind, so an unscoped
+question sees every posting instead of two; the resume keeps its own allowance
+because it is one side of every comparison. A new resume replaces the indexed
+one inside the ingest transaction, and a partial unique index in `db/schema.sql`
+holds that to one. `DELETE /api/documents/[id]` removes either kind.
+
+Next is phase 4 (guardrails and observability: a score threshold that skips the
+model call when retrieval is weak, refusal rules, a `query_logs` table), then
+phase 5 (eval harness) and phase 6 (UI polish, app Dockerfile).
 
 Known and deliberate, not yet fixed:
 
-- Exactly one resume is assumed and nothing enforces it. Retrieval takes every
-  document of kind `resume` on every question, so a second CV would be mixed
-  into the same answer with no way to tell whose experience is whose. Scope
-  resolution covers postings only.
 - Chunks per document is a fixed number, so the share of a document actually
   searched falls as it gets longer: 4 of the current resume's 10 chunks is 40%,
   the same 4 out of a 25-chunk CV is 16%. A relative distance cutoff would
