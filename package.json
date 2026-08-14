@@ -9,12 +9,14 @@
     "lint": "eslint",
     "test": "node --test \"lib/**/*.test.ts\"",
     "inspect": "node scripts/inspect-pdf.ts",
+    "compare": "node --env-file=.env scripts/compare-parsers.ts",
     "retrieve": "node --env-file=.env scripts/inspect-query.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.43",
     "@ai-sdk/react": "^4.0.67",
     "ai": "^7.0.64",
+    "llama-cloud-services": "0.5.4",
     "next": "16.3.0",
     "postgres": "^3.4.9",
     "react": "19.2.8",

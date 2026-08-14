@@ -104,7 +104,7 @@ function normalize(text: string): string {
  * every seam used here is already a paragraph or bullet boundary. Revisit if
  * the eval harness shows answers missing evidence that sits at a boundary.
  */
-function splitBySize(text: string): string[] {
+export function splitBySize(text: string): string[] {
   if (text.length <= MAX_CHARS) return [text];
 
   const units = text
