@@ -25,8 +25,34 @@ create table chunks (
   -- store one string and never be queried on its own.
   section     text not null,
   content     text not null,
-  embedding   vector(1536) not null,  -- text-embedding-3-small
+  embedding   vector(1536) not null,  -- gemini-embedding-001
   created_at  timestamptz not null default now()
+);
+
+-- Every question that reached the chat API, with the numbers its fate was
+-- decided on. Two jobs, and the second is the reason the columns are these:
+--
+-- A refused question that deserved an answer is otherwise invisible -- the user
+-- sees a refusal and closes the tab. Here it is a row with its distance, so the
+-- threshold can be shown to be wrong instead of argued about.
+--
+-- And the threshold was fitted on 28 questions someone thought of. Real ones
+-- accumulate here, which is what the eval harness fits against next.
+create table query_logs (
+  id           uuid primary key default gen_random_uuid(),
+  question     text not null,
+  -- Labels the question resolved to. Empty when it named none, which is also
+  -- the split that matters: unscoped questions and scoped ones fail differently.
+  scope        text[] not null default '{}',
+  sections     int not null,
+  -- Distance of the nearest chunk, and the spread inside the document that owns
+  -- it. Null only when nothing is indexed. The spread is recorded and not
+  -- enforced -- see lib/guardrail.ts for why it did not earn a threshold.
+  top_distance float8,
+  doc_spread   float8,
+  -- False when the guardrail refused before spending a model call.
+  answered     boolean not null,
+  created_at   timestamptz not null default now()
 );
 
 -- The product compares one candidate against several postings, and retrieval

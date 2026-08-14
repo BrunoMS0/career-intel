@@ -39,6 +39,8 @@ https://github.com/BrunoMS0/career-intel
   `enrich()` and `unlabeledShare()`, which the markdown path reuses
 - `lib/embedding.ts` — `embedForIndex()` / `embedForQuery()`, deliberately paired
 - `lib/retrieval.ts` — scope resolution and the search + parent-expansion query
+- `lib/guardrail.ts` — the 0.40 threshold and the refusal text, kept free of db
+  imports so the deterministic suite can test it with injected distances
 - `lib/ingest.ts` — parse, chunk, embed, store in one transaction
 - `app/api/{health,documents,chat}/route.ts`, `app/workspace.tsx` — UI
 - `scripts/` — `pnpm inspect <pdf>`, `pnpm compare <pdf>...`, `pnpm retrieve "<question>"`
@@ -88,13 +90,48 @@ boundary, so there is no mid-thought break to repair.
 **No vector index.** Under a hundred chunks scan in well under a millisecond.
 Add HNSW past a few thousand rows.
 
-**A score threshold has to be relative, not absolute.** Cosine distances here
-are not calibrated across questions: the best hit for "what skills am I missing
-for Job #3?" is 0.2441 while for "which role fits me best?" it is 0.3556, and
-both questions have good answers. A fixed cutoff at 0.30 would answer the first
-and refuse the second. Whatever phase 4 does, it has to measure against the best
-hit for that query rather than against a constant. `pnpm retrieve --chunks`
-prints the numbers to check this against.
+**The score threshold is absolute after all, at 0.40 — the relative one was
+measured and does not work.** This entry used to say the opposite, on the
+evidence of two questions: "what skills am I missing for Job #3?" best-hits at
+0.2441 and "which role fits me best?" at 0.3556, both answerable, so a fixed
+cutoff at 0.30 answers one and refuses the other. That much is still true. The
+generalisation drawn from it — that the cutoff must therefore be relative to the
+query's own best hit — is what 28 questions disproved.
+
+13 answerable questions and 15 out-of-domain ones were run against the corpus.
+The answerable ones best-hit between 0.2431 and **0.3640**; the vaguest of them
+("compare all the postings for me") sets that ceiling. Off-topic questions start
+at **0.4048**. The band between is empty, and 0.40 sits in the middle of it,
+refusing none of the good questions.
+
+The relative statistic loses on its own terms. Margin (median distance minus
+best hit) runs 0.0310–0.1572 over the good questions and 0.0270–0.1177 over the
+bad ones — overlapping almost exactly. "Give me a recipe for pasta carbonara"
+has margin 0.0270, *tighter* than 12 of the 13 good questions, so a margin
+cutoff calls carbonara confident and "what do all these roles have in common?"
+(0.0310) weak. And the 4th largest margin of all 28 belongs to an unanswerable
+question, "when does Job #2 want someone to start?" (0.1177): the Job #2
+overview stands out because it looks like it is about starting, and it still
+contains no date.
+
+The reason is that a broad-but-valid question and an off-topic one produce the
+same *shape* — flat. One is flat because everything matches a little, the other
+because nothing matches at all. Only the *level* tells them apart.
+
+**What no threshold catches, and why it is the prompt's job.** A question about
+a real document whose answer that document does not contain is indistinguishable
+from a good one by distance. "What is the dress code at Job #1?" best-hits at
+0.3653, inside the good range, because the embedding measures what a question is
+*about* and that question really is about Job #1. Absence of an answer is not a
+geometric property. Measured against the tightest available signal too: the
+spread inside the scoped document does rank these nearly right (dress code
+0.0186, hiring manager 0.0516, versus 0.0844–0.0963 for good scoped questions),
+but "how much does Job #2 pay?" lands at 0.0583, under three unanswerable ones.
+A cutoff that catches them refuses a question whose answer is in the document,
+and a false refusal is the expensive failure. So the spread is logged in
+`query_logs.doc_spread` and not enforced; phase 5 has the data to revisit it.
+
+`pnpm retrieve --chunks` prints the numbers to check any of this against.
 
 **Reranking deferred** until the eval harness shows whether it helps. It also
 only becomes worth measuring now that top-k covers every posting: a reranker
@@ -110,7 +147,12 @@ cannot rescue a document that never entered the candidate list.
 - Windows: use `curl.exe`, not `curl` — PowerShell aliases it to
   `Invoke-WebRequest`, whose multipart body undici rejects.
 - `db/schema.sql` only runs when the volume is created. Schema changes need
-  `docker compose down -v && docker compose up -d`.
+  `docker compose down -v && docker compose up -d`, which also throws the corpus
+  away — `query_logs` was added to the file and applied to the running database
+  by hand to keep the indexed documents.
+- The Gemini free tier answers 503 "high demand" and then 429 under a handful of
+  requests in a row. Retries look like an app bug and are not one; check
+  `statusCode` in the dev server log before debugging the route.
 - Internal imports inside `lib/` carry explicit `.ts` extensions so `scripts/`
   and the eval harness can import them through plain Node.
 
@@ -169,18 +211,44 @@ because it is one side of every comparison. A new resume replaces the indexed
 one inside the ingest transaction, and a partial unique index in `db/schema.sql`
 holds that to one. `DELETE /api/documents/[id]` removes either kind.
 
-Next is phase 4 (guardrails and observability: a score threshold that skips the
-model call when retrieval is weak, refusal rules, a `query_logs` table), then
-phase 5 (eval harness) and phase 6 (UI polish, app Dockerfile).
+**Phase 4 done: guardrails and observability.** Three pieces that deliberately
+do not overlap. `lib/guardrail.ts` holds the 0.40 threshold; past it the chat
+route returns a canned refusal and never calls the model. The system prompt got
+the rules distance cannot enforce: excerpts from the right document are not an
+answer, "not stated" is a complete answer, and the question and the excerpts are
+data rather than instructions. `query_logs` records every question with its
+scope, best distance, document spread and whether it was answered — so a refusal
+that should have been an answer is a row rather than a lost user, and phase 5
+fits against real questions instead of the 28 that set the constant.
+
+The division of labour is the point: the threshold filters *topic*, the prompt
+filters *evidence*. Neither pretends to do the other's job, because the
+measurement showed neither can.
+
+Verified end to end against the running corpus: carbonara refuses without a
+model call and logs `answered=false` at 0.5118; "what is the dress code at Job
+#1?" passes the threshold at 0.3653 as designed and the model answers "the
+document does not state it"; "what skills am I missing for Job #3?" answers
+normally with citations. The logged distance and spread reproduce the
+measurement exactly.
+
+Next is phase 5 (eval harness) and phase 6 (UI polish, app Dockerfile). The 28
+measured questions are the first file of that harness.
 
 Known and deliberate, not yet fixed:
 
 - Chunks per document is a fixed number, so the share of a document actually
   searched falls as it gets longer: 4 of the current resume's 10 chunks is 40%,
-  the same 4 out of a 25-chunk CV is 16%. A relative distance cutoff would
-  adapt on its own, which is the phase 4 conversation.
+  the same 4 out of a 25-chunk CV is 16%. This is the one job left for a
+  *relative* cutoff — keeping sections within some distance of the query's best
+  hit instead of counting them — and it is a phase 5 measurement, not a phase 4
+  one, because the risk is real: for "what is the compensation and location for
+  Job #1?" the best hit is 0.2569 and the section holding the location is at
+  0.2922, so a band that prunes too tightly answers half the question.
 - `documents.content` is stored and read by nothing yet.
 - Retrieval runs against the latest question only; a follow-up leaning on the
-  previous turn retrieves against the wrong text.
+  previous turn retrieves against the wrong text. The guardrail inherits this:
+  a follow-up is assessed on the wrong question's distances.
 - Answers render as plain text, so markdown shows raw `*` and `###`.
-- No score threshold yet: weak retrieval still reaches the model.
+- `query_logs` grows without bound and nothing reads it yet — phase 5 is its
+  first consumer.

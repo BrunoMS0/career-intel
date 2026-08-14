@@ -10,6 +10,14 @@ export type RetrievedSection = {
   content: string;
   /** Cosine distance of the closest chunk in this section. Lower is nearer. */
   distance: number;
+  /**
+   * Distance spread across every chunk of this section's document, picked or
+   * not. Not used to retrieve anything -- it rides along so the chat route can
+   * log it. A question the document cannot answer flattens it: asking Job #1
+   * about its dress code puts all six of its chunks within 0.0186 of each
+   * other, while asking about its compensation spreads them over 0.0963.
+   */
+  spread: number;
 };
 
 /**
@@ -89,17 +97,26 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
       from ranked
       where rank <= budget
       group by document_id, section
+    ),
+    -- Over every chunk, not just the picked ones: the question is how flat the
+    -- whole document went, and the budget would hide the far end of it.
+    spread as (
+      select document_id, max(distance) - min(distance) as spread
+      from ranked
+      group by document_id
     )
     select d.label,
            d.kind,
            p.section,
            p.distance::float8 as distance,
+           s.spread::float8 as spread,
            string_agg(c.content, E'\n' order by c.position) as content
     from picked p
     join chunks c
       on c.document_id = p.document_id and c.section = p.section
     join documents d on d.id = p.document_id
-    group by d.label, d.kind, p.section, p.distance
+    join spread s on s.document_id = p.document_id
+    group by d.label, d.kind, p.section, p.distance, s.spread
     order by p.distance
   `;
 }
