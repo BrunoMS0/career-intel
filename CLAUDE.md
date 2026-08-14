@@ -158,6 +158,14 @@ model call when retrieval is weak, refusal rules, a `query_logs` table), phase 5
 
 Known and deliberate, not yet fixed:
 
+- Exactly one resume is assumed and nothing enforces it. Retrieval takes every
+  document of kind `resume` on every question, so a second CV would be mixed
+  into the same answer with no way to tell whose experience is whose. Scope
+  resolution covers postings only.
+- Chunks per document is a fixed number, so the share of a document actually
+  searched falls as it gets longer: 4 of the current resume's 10 chunks is 40%,
+  the same 4 out of a 25-chunk CV is 16%. A relative distance cutoff would
+  adapt on its own, which is the phase 4 conversation.
 - `documents.content` is stored and read by nothing yet.
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text.

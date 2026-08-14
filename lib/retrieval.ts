@@ -28,8 +28,8 @@ export type RetrievedSection = {
  * characters to 10k. Scoped questions come out byte for byte as before.
  */
 const CHUNKS_PER_DOCUMENT = { focused: 4, broad: 2 };
-/** Above this many documents in play, depth gives way to coverage. */
-const BROAD_AT = 3;
+/** The most documents that still get the focused budget; past this, coverage wins. */
+const MAX_FOCUSED_DOCUMENTS = 3;
 /**
  * The resume keeps its full allowance no matter how wide the field gets. It is
  * one document but it is one *side* of every comparison, and letting it shrink
@@ -87,7 +87,9 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
     where kind = 'resume' or ${scope.length === 0 ? sql`true` : sql`label = any(${scope})`}
   `;
   const perDocument =
-    count > BROAD_AT ? CHUNKS_PER_DOCUMENT.broad : CHUNKS_PER_DOCUMENT.focused;
+    count > MAX_FOCUSED_DOCUMENTS
+      ? CHUNKS_PER_DOCUMENT.broad
+      : CHUNKS_PER_DOCUMENT.focused;
 
   return sql<RetrievedSection[]>`
     with ranked as (
