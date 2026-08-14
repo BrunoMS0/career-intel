@@ -80,37 +80,14 @@ export async function resolveScope(query: string): Promise<string[]> {
 export async function retrieve(query: string): Promise<RetrievedSection[]> {
   const scope = await resolveScope(query);
   const vector = toVector(await embedForQuery(query));
-
-  // One document per named posting, plus the resume, which is always in play.
-  const [{ count }] = await sql<{ count: number }[]>`
-    select count(*)::int from documents
-    where kind = 'resume' or ${scope.length === 0 ? sql`true` : sql`label = any(${scope})`}
-  `;
-  const perDocument =
-    count > MAX_FOCUSED_DOCUMENTS
-      ? CHUNKS_PER_DOCUMENT.broad
-      : CHUNKS_PER_DOCUMENT.focused;
+  const { perDocument } = await budget(scope);
 
   return sql<RetrievedSection[]>`
-    with ranked as (
-      select c.document_id,
-             c.section,
-             d.kind,
-             c.embedding <=> ${vector} as distance,
-             row_number() over (
-               partition by c.document_id order by c.embedding <=> ${vector}
-             ) as rank
-      from chunks c
-      join documents d on d.id = c.document_id
-      -- The resume is always in play; postings narrow to the ones asked about.
-      where d.kind = 'resume' or ${
-        scope.length === 0 ? sql`true` : sql`d.label = any(${scope})`
-      }
-    ),
+    with ranked as (${rankChunks(vector, scope, perDocument)}),
     picked as (
       select document_id, section, min(distance) as distance
       from ranked
-      where rank <= case when kind = 'resume' then ${RESUME_CHUNKS}::int else ${perDocument}::int end
+      where rank <= budget
       group by document_id, section
     )
     select d.label,
@@ -125,4 +102,82 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
     group by d.label, d.kind, p.section, p.distance
     order by p.distance
   `;
+}
+
+/** How many documents a question puts in play, and the budget that implies. */
+async function budget(scope: string[]) {
+  // The resume is always in play; postings narrow to the ones asked about.
+  const [{ count }] = await sql<{ count: number }[]>`
+    select count(*)::int from documents
+    where kind = 'resume' or ${scope.length === 0 ? sql`true` : sql`label = any(${scope})`}
+  `;
+  return {
+    documents: count,
+    perDocument:
+      count > MAX_FOCUSED_DOCUMENTS
+        ? CHUNKS_PER_DOCUMENT.broad
+        : CHUNKS_PER_DOCUMENT.focused,
+    resume: RESUME_CHUNKS,
+  };
+}
+
+/**
+ * The chunk-level ranking, written once because two callers read it: the
+ * retriever above and `pnpm retrieve --chunks`. An explanation that drifts from
+ * what actually ran is worse than none.
+ */
+function rankChunks(vector: string, scope: string[], perDocument: number) {
+  return sql`
+    select c.document_id,
+           c.section,
+           c.position,
+           length(c.content) as chars,
+           d.label,
+           d.kind,
+           c.embedding <=> ${vector} as distance,
+           row_number() over (
+             partition by c.document_id order by c.embedding <=> ${vector}
+           ) as rank,
+           case when d.kind = 'resume' then ${RESUME_CHUNKS}::int else ${perDocument}::int end as budget
+    from chunks c
+    join documents d on d.id = c.document_id
+    where d.kind = 'resume' or ${
+      scope.length === 0 ? sql`true` : sql`d.label = any(${scope})`
+    }
+  `;
+}
+
+export type RankedChunk = {
+  label: string;
+  kind: DocumentKind;
+  section: string;
+  position: number;
+  chars: number;
+  distance: number;
+  rank: number;
+  /** Within its document's budget, so this chunk is one of the search hits. */
+  picked: boolean;
+};
+
+/**
+ * Every chunk the search considered, ranked, with the budget that decided which
+ * ones counted. Nothing in the answer path calls this -- it exists so the two
+ * stages can be read on a terminal instead of inferred from the output.
+ */
+export async function explainRetrieval(query: string) {
+  const scope = await resolveScope(query);
+  const vector = toVector(await embedForQuery(query));
+  const limits = await budget(scope);
+
+  const chunks = await sql<RankedChunk[]>`
+    with ranked as (${rankChunks(vector, scope, limits.perDocument)})
+    select label, kind, section, position, chars,
+           distance::float8 as distance,
+           rank::int as rank,
+           (rank <= budget) as picked
+    from ranked
+    order by label, rank
+  `;
+
+  return { scope, limits, chunks };
 }
