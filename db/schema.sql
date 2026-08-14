@@ -29,6 +29,13 @@ create table chunks (
   created_at  timestamptz not null default now()
 );
 
+-- The product compares one candidate against several postings, and retrieval
+-- takes every resume on every question. A second one would mix two people's
+-- experience into the same answer with nothing marking which is whose, so the
+-- assumption is enforced where the data lives rather than in a route that a
+-- second caller could skip.
+create unique index documents_single_resume_idx on documents (kind) where kind = 'resume';
+
 create index chunks_document_id_idx on chunks (document_id);
 
 -- ponytail: no vector index. A few hundred chunks scan in under a millisecond,

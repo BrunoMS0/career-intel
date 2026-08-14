@@ -3,6 +3,8 @@ import { ingest, IngestError, type DocumentKind } from "@/lib/ingest";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const KINDS: DocumentKind[] = ["resume", "job"];
+/** Partial unique index in db/schema.sql that allows a single resume. */
+const RESUME_CONSTRAINT = "documents_single_resume_idx";
 
 export async function GET() {
   const documents = await sql`
@@ -59,8 +61,19 @@ export async function POST(request: Request) {
     if (error instanceof IngestError) {
       return Response.json({ error: error.message }, { status: error.status });
     }
-    // documents.label is unique so queries can scope to "Job #2" unambiguously.
     if ((error as { code?: string }).code === "23505") {
+      // Two different uniques land here, and saying the wrong one sends the
+      // user off renaming a file that was never the problem.
+      if ((error as { constraint_name?: string }).constraint_name === RESUME_CONSTRAINT) {
+        return Response.json(
+          {
+            error:
+              "a resume is already indexed. This app compares one candidate against several postings, so remove the existing resume before adding another.",
+          },
+          { status: 409 },
+        );
+      }
+      // documents.label is unique so queries can scope to "Job #2" unambiguously.
       return Response.json(
         { error: `label "${label}" is already taken` },
         { status: 409 },
