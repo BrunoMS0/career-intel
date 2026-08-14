@@ -51,7 +51,8 @@ pnpm dev                              # app on :3000
 pnpm test                             # chunker and pdf tests
 pnpm inspect <file.pdf> [--text]      # how a PDF chunks under unpdf, without indexing it
 pnpm compare <file.pdf>...            # both parsers side by side, with fidelity
-pnpm retrieve "<question>"            # what a question retrieves, with distances
+pnpm chunks ["<label>"] [--full]      # what is actually indexed, from the db
+pnpm retrieve [--chunks] "<question>" # what a question retrieves, with distances
 docker compose exec db psql -U postgres -d career_intel
 ```
 

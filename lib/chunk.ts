@@ -5,7 +5,7 @@ export type Chunk = {
 };
 
 /** Roughly 300 tokens at ~4 chars per token. Sections above this get split. */
-const MAX_CHARS = 1200;
+export const MAX_CHARS = 1200;
 /** A trailing piece shorter than this is folded back instead of standing alone. */
 const MIN_CHARS = 120;
 /** Section for text that appears before the first heading, or when none exist. */

@@ -10,6 +10,7 @@
     "test": "node --test \"lib/**/*.test.ts\"",
     "inspect": "node scripts/inspect-pdf.ts",
     "compare": "node --env-file=.env scripts/compare-parsers.ts",
+    "chunks": "node --env-file=.env scripts/inspect-chunks.ts",
     "retrieve": "node --env-file=.env scripts/inspect-query.ts"
   },
   "dependencies": {
