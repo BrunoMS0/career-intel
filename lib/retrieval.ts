@@ -12,8 +12,31 @@ export type RetrievedSection = {
   distance: number;
 };
 
-/** Sections kept per side of the comparison. */
-const TOP_K = 4;
+/**
+ * Chunks ranked per document, not per side.
+ *
+ * Ranking by document kind gave the resume four slots and made all six postings
+ * share the other four, so "which role fits me best?" answered from two of them
+ * and the model never saw the rest. Per document every posting is guaranteed a
+ * look, which is the whole premise of a question that compares them.
+ *
+ * The budget therefore has to shrink as the field widens: a question naming one
+ * posting has two documents in play and can afford depth, while an unscoped one
+ * has seven and needs breadth. Measured with `pnpm retrieve` on the six-posting
+ * corpus, "which role fits me best?" went from 8 sections drawn from two
+ * postings to 16 covering all six, and the context it builds from 3.8k
+ * characters to 10k. Scoped questions come out byte for byte as before.
+ */
+const CHUNKS_PER_DOCUMENT = { focused: 4, broad: 2 };
+/** Above this many documents in play, depth gives way to coverage. */
+const BROAD_AT = 3;
+/**
+ * The resume keeps its full allowance no matter how wide the field gets. It is
+ * one document but it is one *side* of every comparison, and letting it shrink
+ * to a posting's share answered "which role fits me best?" with 12% of the
+ * context describing the candidate.
+ */
+const RESUME_CHUNKS = 4;
 
 const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -43,10 +66,11 @@ export async function resolveScope(query: string): Promise<string[]> {
  *
  * Two things happen here that a plain top-k does not do:
  *
- * Both sides are guaranteed. Ranking is partitioned by document kind, so the
- * resume and the postings each contribute their own best matches. Every
- * question this product answers is a comparison, and a single ranked list can
- * easily return eight requirement chunks and nothing to compare them against.
+ * Every document is guaranteed a look. Ranking is partitioned by document, so
+ * the resume and each posting in scope contribute their own best matches. A
+ * single ranked list can easily return eight requirement chunks from one
+ * posting and nothing to compare them against, and every question this product
+ * answers is a comparison.
  *
  * Matches are widened to their parent section. A chunk is precise enough to
  * search with but too narrow to answer from: "what am I missing for this role"
@@ -57,13 +81,22 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
   const scope = await resolveScope(query);
   const vector = toVector(await embedForQuery(query));
 
+  // One document per named posting, plus the resume, which is always in play.
+  const [{ count }] = await sql<{ count: number }[]>`
+    select count(*)::int from documents
+    where kind = 'resume' or ${scope.length === 0 ? sql`true` : sql`label = any(${scope})`}
+  `;
+  const perDocument =
+    count > BROAD_AT ? CHUNKS_PER_DOCUMENT.broad : CHUNKS_PER_DOCUMENT.focused;
+
   return sql<RetrievedSection[]>`
     with ranked as (
       select c.document_id,
              c.section,
+             d.kind,
              c.embedding <=> ${vector} as distance,
              row_number() over (
-               partition by d.kind order by c.embedding <=> ${vector}
+               partition by c.document_id order by c.embedding <=> ${vector}
              ) as rank
       from chunks c
       join documents d on d.id = c.document_id
@@ -75,7 +108,7 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
     picked as (
       select document_id, section, min(distance) as distance
       from ranked
-      where rank <= ${TOP_K}
+      where rank <= case when kind = 'resume' then ${RESUME_CHUNKS}::int else ${perDocument}::int end
       group by document_id, section
     )
     select d.label,

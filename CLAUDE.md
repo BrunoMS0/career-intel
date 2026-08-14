@@ -25,19 +25,23 @@ https://github.com/BrunoMS0/career-intel
 | DB | Postgres 17 + pgvector 0.8.6 (Docker) | relational data and vectors in one container, metadata filters in the same `WHERE` as the search |
 | Embeddings | `gemini-embedding-001`, 1536 dims | OpenAI account had no credits; Gemini's free tier also gives asymmetric `taskType` |
 | LLM | `gemini-3.7-flash` via `CHAT_MODEL` | free tier; pinned, not an alias, so eval runs stay comparable |
-| PDF | `unpdf` | no native deps, keeps the image small |
+| PDF | LlamaParse (`llama-cloud-services`) | markdown states its headings instead of leaving them to be guessed; `unpdf` stays as the local fidelity yardstick |
 | SQL | `postgres` (postgres.js), raw SQL | three tables; `db/schema.sql` runs on container init, no migration toolchain |
 | Tests | `node --test` | stdlib, no framework |
 
 ## Layout
 
-- `lib/pdf.ts` — text extraction, rebuilds reading order from glyph positions
-- `lib/chunk.ts` — section-aware chunker, `enrich()`, `unlabeledShare()`
+- `lib/pdf-llama.ts` — LlamaParse extraction, `compareFidelity()`
+- `lib/chunk-markdown.ts` — markdown-native chunker, what ingest uses
+- `lib/pdf.ts` — unpdf extraction, rebuilds reading order from glyph positions;
+  no longer the indexed text, still the fidelity yardstick
+- `lib/chunk.ts` — heuristic chunker for plain text, plus `splitBySize()`,
+  `enrich()` and `unlabeledShare()`, which the markdown path reuses
 - `lib/embedding.ts` — `embedForIndex()` / `embedForQuery()`, deliberately paired
 - `lib/retrieval.ts` — scope resolution and the search + parent-expansion query
 - `lib/ingest.ts` — parse, chunk, embed, store in one transaction
 - `app/api/{health,documents,chat}/route.ts`, `app/workspace.tsx` — UI
-- `scripts/` — `pnpm inspect <pdf>`, `pnpm retrieve "<question>"`
+- `scripts/` — `pnpm inspect <pdf>`, `pnpm compare <pdf>...`, `pnpm retrieve "<question>"`
 
 ## Commands
 
@@ -45,12 +49,19 @@ https://github.com/BrunoMS0/career-intel
 docker compose up -d                  # Postgres + pgvector
 pnpm dev                              # app on :3000
 pnpm test                             # chunker and pdf tests
-pnpm inspect <file.pdf> [--text]      # how a PDF chunks, without indexing it
+pnpm inspect <file.pdf> [--text]      # how a PDF chunks under unpdf, without indexing it
+pnpm compare <file.pdf>...            # both parsers side by side, with fidelity
 pnpm retrieve "<question>"            # what a question retrieves, with distances
 docker compose exec db psql -U postgres -d career_intel
 ```
 
 ## Decisions worth not relitigating
+
+The next two decisions describe `lib/chunk.ts`, which guessed headings out of
+plain text. LlamaParse now states them, so neither rule runs on an ingest any
+more — they are kept because the reasoning still explains why the section label
+is worth this much trouble, and because `pnpm inspect` and `pnpm compare` still
+exercise that path.
 
 **Structure-based chunking, hand-rolled.** Sections are semantic here, not
 decorative: "5+ years of React" under a posting's requirements means the role
@@ -96,26 +107,50 @@ Add HNSW past a few thousand rows.
 
 Phases 1-3 done: setup, ingestion, retrieval and grounded chat with citations.
 
-**In progress: swapping the PDF parser for LlamaParse.** The user decided to
-adopt it; the agreement is to measure it against `unpdf` on the seven real
-documents before deleting anything, the same way every other choice here was
-settled. Notes for that work:
+**Done: the PDF parser is LlamaParse** (`llama-cloud-services` 0.5.4, key in
+`LLAMA_CLOUD_API_KEY`). `pnpm compare <file.pdf>...` runs both parsers over the
+same documents and prints sections, chunks and fidelity; that is the evidence
+the swap was decided on and the tool for judging a new document.
 
-- Use `llama-cloud-services` (0.5.4). `llama-parse` on npm is a 0.1.0 community
-  client and `@llamaindex/cloud` is deprecated. Key in `LLAMA_CLOUD_API_KEY`.
-- The parser is isolated behind `extractOrderedText(data) => string` in
-  `lib/pdf.ts`, so a second implementation is a same-signature module.
-- LlamaParse returns markdown. If it wins, most of `lib/chunk.ts` goes away —
-  the vocabulary, the caps rule, the Title-Case-above-a-bullet rule and its
-  three guards all exist only to guess which line is a heading, and markdown
-  states it. Keep `splitBySize`, `enrich` and `unlabeledShare`.
-- Markdown also makes heading depth explicit (`#` vs `##`), which the current
-  flat `section` column throws away: in Job #6, `Required` is really a child of
-  `What You Bring`. That would let parent expansion climb to the right parent
-  instead of a flat section.
-- Costs that belong in the README: it is a hosted service, so documents are
-  uploaded to a third party (the user's real resume among them) and ingestion
-  stops working offline.
+What the measurement actually found, since two of the assumptions above it were
+wrong:
+
+- **Heading depth is not explicit.** LlamaParse emitted 77 headings across the
+  corpus and not one `##`. The hope that `Required` would come back as a child
+  of `What You Bring` did not survive; sections are flat and
+  `lib/chunk-markdown.ts` says so.
+- **A heading with an empty body is ambiguous.** In Job #6 it is a real parent
+  (`What You'll Do`); in Job #1 it is a skills-list entry the model promoted
+  (`Git/GitHub`, `Azure DevOps`). Same shape, so no hierarchy is inferred and
+  the text folds back into the section it interrupted.
+- **The markdown is written by a language model, not extracted.**
+  `parse_mode: "parse_page_without_llm"` returns no markdown at all — the
+  result endpoint 404s — so structure and rewriting are the same feature. Two
+  earlier revisions of the corpus proved what that costs: on one it translated
+  a whole posting into Spanish, twice, differently each time; on the next it
+  silently dropped two sentences from the Afficiency posting, one of them the
+  location requirement.
+- Hence `compareFidelity()` in `lib/pdf-llama.ts`: unpdf still runs on every
+  ingest, purely as the verbatim yardstick, and a parse below 98% of the source
+  vocabulary warns with the missing words. The current corpus — postings the
+  user restructured with explicit headings — scores 100% across all six, so the
+  check is quiet. It stays because nothing about the parser changed, only the
+  input did.
+
+Input structure turned out to matter more than any parser setting. The
+restructured postings took unlabeled text from 28%/17%/7%/5%/4% down to 0% on
+four of six, and fixed the fidelity loss outright. What it did **not** change is
+heading depth: still 56 headings, still no `##`.
+
+Costs that belong in the README: it is a hosted service, so documents are
+uploaded to a third party (the user's real resume among them), ingestion stops
+working offline, output is not reproducible run to run, and the package prints
+its own deprecation notice (maintained to 1 May 2026, successor
+`@llamaindex/llama-cloud`).
+
+`chunkDocument()` and its heuristics in `lib/chunk.ts` are no longer in the
+ingest path — only `splitBySize`, `enrich` and `unlabeledShare` are. They still
+back `pnpm inspect` and the unpdf column of `pnpm compare`.
 
 Then phase 4 (guardrails and observability: a score threshold that skips the
 model call when retrieval is weak, refusal rules, a `query_logs` table), phase 5
@@ -123,8 +158,6 @@ model call when retrieval is weak, refusal rules, a `query_logs` table), phase 5
 
 Known and deliberate, not yet fixed:
 
-- `TOP_K` is per document *kind*, so an unscoped "which role fits me best?"
-  showed sections from only 2 of 6 postings. Needs top-k per document.
 - `documents.content` is stored and read by nothing yet.
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text.
