@@ -3,6 +3,12 @@ import { sql } from "../lib/db.ts";
 import { embedForQuery, toVector } from "../lib/embedding.ts";
 import { WEAK_DISTANCE } from "../lib/guardrail.ts";
 import {
+  CANDIDATES_PER_DOCUMENT,
+  passageFor,
+  RERANK_MODEL,
+  scorePassages,
+} from "../lib/rerank.ts";
+import {
   CHUNKS_PER_DOCUMENT,
   MAX_FOCUSED_DOCUMENTS,
   RESUME_CHUNKS,
@@ -30,6 +36,12 @@ import {
 
 const QUESTIONS = "eval/questions.json";
 const SNAPSHOT = "eval/distances.json";
+/**
+ * Cross-encoder scores, cached the same way and for the same reason as the
+ * distances: they cost a hosted call, they are the same for every replay, and
+ * a rule that needs 200 requests to evaluate does not get evaluated twice.
+ */
+const RERANKED = "eval/rerank.json";
 const SEPARATOR = " — ";
 
 type Question = {
@@ -78,6 +90,12 @@ const BUDGET = {
 };
 
 const verbose = process.argv.includes("--verbose");
+/**
+ * Measures the cross-encoder as a *candidate* rule, replayed over the same
+ * snapshot as the current one, so the two are compared on identical numbers and
+ * nothing is wired into the app before it has earned it.
+ */
+const reranking = process.argv.includes("--rerank");
 const questions: Question[] = JSON.parse(readFileSync(QUESTIONS, "utf8"));
 
 // ---------------------------------------------------------------- the snapshot
@@ -140,6 +158,88 @@ for (const question of questions) {
 }
 writeFileSync(SNAPSHOT, JSON.stringify(snapshot, null, 1));
 
+// -------------------------------------------------------------- the rerank pass
+
+/** Scores aligned to snapshot.chunks, null for anything the net did not reach. */
+type Reranked = { model: string; scores: Record<string, (number | null)[]> };
+
+const reranks: Reranked = existsSync(RERANKED)
+  ? JSON.parse(readFileSync(RERANKED, "utf8"))
+  : { model: RERANK_MODEL, scores: {} };
+
+/**
+ * The wide net: the bi-encoder's top CANDIDATES_PER_DOCUMENT per document, as
+ * indices into snapshot.chunks. This is what the cross-encoder gets to reorder,
+ * and it is computed here rather than in SQL so the offline replay and the
+ * measurement see exactly the same set.
+ */
+function candidatesFor(question: Question): number[] {
+  const scope = snapshot.scope[question.id] ?? [];
+  const distances = snapshot.distances[question.id];
+  const rows = snapshot.chunks
+    .map((chunk, index) => ({ ...chunk, index, distance: distances[index] }))
+    .filter(
+      (chunk) => chunk.kind === "resume" || scope.length === 0 || scope.includes(chunk.label),
+    );
+
+  return [...new Set(rows.map((row) => row.label))].flatMap((label) =>
+    rows
+      .filter((row) => row.label === label)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, CANDIDATES_PER_DOCUMENT)
+      .map((row) => row.index),
+  );
+}
+
+if (reranking) {
+  if (reranks.model !== RERANK_MODEL) {
+    console.error(
+      `cached scores are from ${reranks.model}, this run is ${RERANK_MODEL}.\n` +
+        `delete ${RERANKED} and measure again.`,
+    );
+    await sql.end();
+    process.exit(1);
+  }
+
+  // The passage text lives in the database, not in the snapshot, which only
+  // keeps section names and lengths.
+  const contents = await sql<{ content: string }[]>`
+    select c.content from chunks c join documents d on d.id = c.document_id
+    order by d.label, c.position
+  `;
+
+  const owed = questions.filter((question) => !reranks.scores[question.id]);
+  if (owed.length > 0) console.log(`\nreranking ${owed.length} of ${questions.length} questions\n`);
+
+  for (const [index, question] of owed.entries()) {
+    const candidates = candidatesFor(question);
+    try {
+      const scored = await scorePassages(
+        question.q,
+        candidates.map((i) =>
+          passageFor({ section: snapshot.chunks[i].section, content: contents[i].content }),
+        ),
+      );
+      const aligned: (number | null)[] = snapshot.chunks.map(() => null);
+      candidates.forEach((chunk, at) => (aligned[chunk] = scored[at]));
+      reranks.scores[question.id] = aligned;
+      writeFileSync(RERANKED, JSON.stringify(reranks, null, 1));
+      console.log(
+        `  ${String(index + 1).padStart(2)}/${owed.length}  ${question.id.padEnd(26)}` +
+          `${candidates.length} passages`,
+      );
+    } catch (error) {
+      console.error(
+        `\nstopped at ${question.id} after ${index} of ${owed.length}: ` +
+          `${error instanceof Error ? error.message : error}\n` +
+          `${Object.keys(reranks.scores).length} questions cached. rerun to continue.`,
+      );
+      await sql.end();
+      process.exit(1);
+    }
+  }
+}
+
 // ------------------------------------------------------------- the current rule
 
 type Picked = { label: string; section: string; distance: number; chars: number };
@@ -152,14 +252,14 @@ type Picked = { label: string; section: string; distance: number; chars: number 
  * A mirror that drifts measures nothing, so `pnpm eval` checks it against the
  * real retrieve() before reporting anything.
  */
-function pick(question: Question, band?: number): Picked[] {
+function pick(question: Question, band?: number, reranked = false): Picked[] {
   const scope = snapshot.scope[question.id] ?? [];
   const inPlay = (chunk: Chunk) =>
     chunk.kind === "resume" || scope.length === 0 || scope.includes(chunk.label);
 
   const distances = snapshot.distances[question.id];
   const rows = snapshot.chunks
-    .map((chunk, index) => ({ ...chunk, distance: distances[index] }))
+    .map((chunk, index) => ({ ...chunk, index, distance: distances[index] }))
     .filter(inPlay);
 
   const documents = new Set(rows.map((row) => row.label));
@@ -167,11 +267,20 @@ function pick(question: Question, band?: number): Picked[] {
     documents.size > BUDGET.maxFocusedDocuments ? BUDGET.broad : BUDGET.focused;
 
   const best = Math.min(...rows.map((row) => row.distance));
+  const scores = reranked ? reranks.scores[question.id] : undefined;
   const hits = [...documents].flatMap((label) => {
     const own = rows
       .filter((row) => row.label === label)
       .sort((a, b) => a.distance - b.distance);
     const allowance = own[0].kind === "resume" ? BUDGET.resume : perDocument;
+    if (scores) {
+      // The wide net first, then the cross-encoder's order inside it, then the
+      // same budget. The budget never moves -- only which chunks fill it.
+      return own
+        .slice(0, CANDIDATES_PER_DOCUMENT)
+        .sort((a, b) => (scores[b.index] ?? -1) - (scores[a.index] ?? -1))
+        .slice(0, allowance);
+    }
     return band === undefined
       ? own.slice(0, allowance)
       : own.filter((row) => row.distance <= best + band);
@@ -418,5 +527,105 @@ verdict(
   "scoped only, where one document dominates",
   passing.filter((row) => row.question.scope.length > 0),
 );
+
+// ------------------------------------- decision 2: does a cross-encoder reorder
+
+if (reranking) {
+  console.log(`\n\nRERANK — ${RERANK_MODEL} over the top ${CANDIDATES_PER_DOCUMENT} per document\n`);
+
+  const withEvidence = questions.filter((question) => question.evidence.length > 0);
+  const key = (section: Picked) => `${section.label}${SEPARATOR}${section.section}`;
+  const found = (question: Question, on: boolean) => {
+    const got = new Set(pick(question, undefined, on).map(key));
+    return question.evidence.filter((section) => got.has(section));
+  };
+
+  let before = 0;
+  let after = 0;
+  for (const question of withEvidence) {
+    const was = found(question, false);
+    const now = found(question, true);
+    before += was.length;
+    after += now.length;
+    const won = now.filter((section) => !was.includes(section));
+    const lost = was.filter((section) => !now.includes(section));
+    if (verbose || won.length > 0 || lost.length > 0) {
+      console.log(
+        `  ${won.length > lost.length ? " +  " : lost.length > won.length ? " -  " : "    "}` +
+          `${question.id.padEnd(26)} ${was.length}/${question.evidence.length} -> ` +
+          `${now.length}/${question.evidence.length}` +
+          (won.length ? `   won ${won.join(", ")}` : "") +
+          (lost.length ? `   lost ${lost.join(", ")}` : ""),
+      );
+    }
+  }
+  const total = withEvidence.reduce((sum, question) => sum + question.evidence.length, 0);
+  console.log(`\n  evidence ${before}/${total} -> ${after}/${total}`);
+
+  // The falsifiable part. These four survived every index-level change measured
+  // -- finer chunks, identity in the embedding, normalised section tags -- and
+  // were each traced to rank 5-8 inside their own document. They are what the
+  // ordering diagnosis predicts a cross-encoder recovers. If they do not move,
+  // the diagnosis was wrong and something else is going on.
+  const PREDICTED: [string, string][] = [
+    ["fit-job7", "Job #7 — REQUIRED EXPERIENCE"],
+    ["missing-job3", "Job #3 — QUALIFICATIONS"],
+    ["remote-jobs", "Job #2 — Mid-Level AI Product / Creative-Tools Engineer"],
+    ["align-job5", "My resume — TECHNICAL SKILLS"],
+  ];
+  console.log("\n  the four the ordering diagnosis predicts\n");
+  for (const [id, section] of PREDICTED) {
+    const question = questions.find((entry) => entry.id === id)!;
+    const got = new Set(pick(question, undefined, true).map(key));
+    console.log(`    ${got.has(section) ? "recovered" : "still out"}  ${id.padEnd(14)} ${section}`);
+  }
+
+  const shortfall = questions
+    .filter((question) => question.coverage.length > 0)
+    .filter((question) => {
+      const seen = new Set(pick(question, undefined, true).map((section) => section.label));
+      return question.coverage.some((label) => !seen.has(label));
+    });
+  console.log(
+    `\n  coverage: ${
+      shortfall.length === 0
+        ? "still complete"
+        : `${shortfall.length} short -- ${shortfall.map((q) => q.id).join(", ")}`
+    }`,
+  );
+
+  // The guardrail reads the nearest *returned* section, so reranking a chunk out
+  // of the budget could raise it and refuse a question the threshold passes
+  // today. This is the check for that, and it is why the app keeps the
+  // bi-encoder distance on the section rather than the cross-encoder's score.
+  const nearest = (question: Question, on: boolean) =>
+    Math.min(...pick(question, undefined, on).map((section) => section.distance));
+  const moved = questions.filter(
+    (question) => Math.abs(nearest(question, false) - nearest(question, true)) > 0.00005,
+  );
+  const flipped = moved.filter(
+    (question) =>
+      nearest(question, false) > WEAK_DISTANCE !== (nearest(question, true) > WEAK_DISTANCE),
+  );
+  console.log(
+    `  guardrail: nearest returned section moved on ${moved.length} of ${questions.length} questions, ` +
+      `${flipped.length} would change side`,
+  );
+  for (const question of moved) {
+    console.log(
+      `    ${question.id.padEnd(26)} ${nearest(question, false).toFixed(4)} -> ${nearest(question, true).toFixed(4)}`,
+    );
+  }
+
+  const chars = (on: boolean) =>
+    questions
+      .filter((question) => !question.refuse)
+      .map((question) =>
+        pick(question, undefined, on).reduce((sum, section) => sum + section.chars, 0),
+      );
+  const mean = (values: number[]) =>
+    Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+  console.log(`  context: ${mean(chars(false))} -> ${mean(chars(true))} chars on average`);
+}
 
 await sql.end();

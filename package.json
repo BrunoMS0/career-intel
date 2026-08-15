@@ -16,6 +16,7 @@
     "answers": "node --env-file=.env scripts/eval-answers.ts"
   },
   "dependencies": {
+    "@ai-sdk/cohere": "^4.0.27",
     "@ai-sdk/google": "^4.0.43",
     "@ai-sdk/react": "^4.0.67",
     "ai": "^7.0.64",
