@@ -43,3 +43,6 @@ next-env.d.ts
 
 # parser comparison cache (contains real documents)
 .cache/
+
+# the answer cache holds model prose about the real resume; distances.json is the evidence that gets versioned
+eval/answers.json

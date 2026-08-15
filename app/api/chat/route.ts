@@ -12,7 +12,7 @@ import { assessRetrieval, REFUSAL } from "@/lib/guardrail";
 import { buildPrompt } from "@/lib/prompt";
 import { resolveScope, retrieve } from "@/lib/retrieval";
 
-const CHAT_MODEL = process.env.CHAT_MODEL ?? "gemini-3.7-flash";
+const CHAT_MODEL = process.env.CHAT_MODEL ?? "gemma-4-31b-it";
 
 /**
  * Retrieval runs against the newest question alone. A follow-up that leans on

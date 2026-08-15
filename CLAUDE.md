@@ -24,7 +24,7 @@ https://github.com/BrunoMS0/career-intel
 | App | Next.js 16, React 19, TypeScript | assignment asks fullstack |
 | DB | Postgres 17 + pgvector 0.8.6 (Docker) | relational data and vectors in one container, metadata filters in the same `WHERE` as the search |
 | Embeddings | `gemini-embedding-001`, 1536 dims | OpenAI account had no credits; Gemini's free tier also gives asymmetric `taskType` |
-| LLM | `gemini-3.7-flash` via `CHAT_MODEL` | free tier; pinned, not an alias, so eval runs stay comparable |
+| LLM | `gemma-4-31b-it` via `CHAT_MODEL` | open weights, own free-tier quota, same key and provider package; pinned, not an alias, so eval runs stay comparable |
 | PDF | LlamaParse (`llama-cloud-services`) | markdown states its headings instead of leaving them to be guessed; `unpdf` stays as the local fidelity yardstick |
 | SQL | `postgres` (postgres.js), raw SQL | three tables; `db/schema.sql` runs on container init, no migration toolchain |
 | Tests | `node --test` | stdlib, no framework |
@@ -69,6 +69,7 @@ pnpm chunks ["<label>"] [--full]      # what is actually indexed, from the db
 pnpm retrieve [--chunks] "<question>" # what a question retrieves, with distances
 pnpm eval [--verbose]                 # retrieval eval over eval/questions.json
 pnpm answers [--full] [--report]      # answer eval; --full adds the no-retrieval variant
+pnpm answers --repeat=3               # answer each question 3 times, report what flips
 docker compose exec db psql -U postgres -d career_intel
 ```
 
@@ -104,7 +105,7 @@ boundary, so there is no mid-thought break to repair.
 **No vector index.** Under a hundred chunks scan in well under a millisecond.
 Add HNSW past a few thousand rows.
 
-**The score threshold is absolute after all, at 0.40 — the relative one was
+**The score threshold is absolute after all, at 0.387 — the relative one was
 measured and does not work.** This entry used to say the opposite, on the
 evidence of two questions: "what skills am I missing for Job #3?" best-hits at
 0.2441 and "which role fits me best?" at 0.3556, both answerable, so a fixed
@@ -112,30 +113,40 @@ cutoff at 0.30 answers one and refuses the other. That much is still true. The
 generalisation drawn from it — that the cutoff must therefore be relative to the
 query's own best hit — is what 28 questions disproved.
 
-13 answerable questions and 15 out-of-domain ones were run against the corpus.
-The answerable ones best-hit between 0.2431 and **0.3640**; the vaguest of them
-("compare all the postings for me") sets that ceiling. Off-topic questions start
-at **0.4048**. The band between is empty and 0.40 sits inside it, refusing none
-of the good questions.
+**The constant is fitted per corpus, and phase 6 refitted it.** On the
+eight-document corpus all 31 questions were remeasured. The highest that must
+pass is the injection at **0.3705**, which clears on purpose so the prompt gets
+to decline it; the highest with a real answer is "compare all the postings for
+me" at **0.3589**. The nearest that must refuse is "how should I prepare for a
+system design interview?" at **0.4040**. Nothing lands between 0.3705 and
+0.4040, and 0.387 is the middle of that empty band.
 
-Phase 5 corrected one detail of that sentence: the band is narrower than it
-looks and 0.40 is not in its middle. The highest question that *passes* is not
-the answerable ceiling but the injection at **0.3705**, which clears the
-threshold by design, so the empty band runs 0.3705 to 0.4048 and 0.40 sits
-0.0048 under the ceiling and 0.0295 over the floor. The asymmetry happens to be
-the right way round -- wide margin against the false refusal, which is the
-expensive failure -- but it is thinner against a false answer than the original
-wording suggests. `pnpm eval` re-checks all 28 sides on every run.
+The old 0.40 still separates all 31 correctly — the band barely moved, 0.3705 to
+0.4048 before against 0.3705 to 0.4040 now — so this change alters no outcome on
+the question set. What it changes is the margin. 0.40 sat **0.0040** under the
+refusing floor, and a single corpus edit has already moved that same question
+0.0063 (0.4048 → 0.3985): the constant was one heading rewrite away from
+answering a question it exists to refuse, and nothing would have failed loudly.
+0.387 is 0.0165 from the nearest question on the passing side and 0.0170 from
+the nearest on the refusing side.
 
-The relative statistic loses on its own terms. Margin (median distance minus
-best hit) runs 0.0310–0.1572 over the good questions and 0.0270–0.1177 over the
-bad ones — overlapping almost exactly. "Give me a recipe for pasta carbonara"
-has margin 0.0270, *tighter* than 12 of the 13 good questions, so a margin
-cutoff calls carbonara confident and "what do all these roles have in common?"
-(0.0310) weak. And the 4th largest margin of all 28 belongs to an unanswerable
-question, "when does Job #2 want someone to start?" (0.1177): the Job #2
-overview stands out because it looks like it is about starting, and it still
-contains no date.
+The asymmetry the old value bought is not lost, because the two sides do not
+cost the same. A false refusal is the expensive failure, and the nearest
+question that would suffer one is 0.0281 away (compare-all); the nearest false
+answer is 0.0170 away. The wider margin still faces the expensive side.
+
+The relative statistic loses on its own terms, and it lost again on the new
+corpus without being asked to. Margin (median distance minus best hit) runs
+0.0291–0.1588 over the answerable questions and 0.0294–0.1234 over everything
+else — overlapping almost exactly, as before. "Give me a recipe for pasta
+carbonara" has margin 0.0340, *looser* than three answerable questions, so any
+margin cutoff that refuses carbonara also refuses "am I a good fit for any of
+these?" (0.0291), "what do all these roles have in common?" (0.0292) and "which
+role fits me best?" (0.0317). And the 4th largest margin of all 31 still belongs
+to an unanswerable question, "when does Job #2 want someone to start?" (0.1234,
+up from 0.1177 and holding the same rank across a full corpus replacement): the
+Job #2 title section stands out because it looks like it is about starting, and
+it still contains no date.
 
 The reason is that a broad-but-valid question and an off-topic one produce the
 same *shape* — flat. One is flat because everything matches a little, the other
@@ -144,37 +155,39 @@ because nothing matches at all. Only the *level* tells them apart.
 **What no threshold catches, and why it is the prompt's job.** A question about
 a real document whose answer that document does not contain is indistinguishable
 from a good one by distance. "What is the dress code at Job #1?" best-hits at
-0.3653, inside the good range, because the embedding measures what a question is
-*about* and that question really is about Job #1. Absence of an answer is not a
-geometric property. Measured against the tightest available signal too: the
-spread inside the scoped document does rank these nearly right (dress code
-0.0186, hiring manager 0.0516, versus 0.0844–0.0963 for good scoped questions),
-but "how much does Job #2 pay?" lands at 0.0583, under three unanswerable ones.
-A cutoff that catches them refuses a question whose answer is in the document,
-and a false refusal is the expensive failure. So the spread is logged in
-`query_logs.doc_spread` and not enforced; phase 5 has the data to revisit it.
+0.3584, inside the good range — and on this corpus 0.0005 *under* the answerable
+ceiling rather than above it, an ordering that flipped on a reindex — because
+the embedding measures what a question is *about* and that question really is
+about Job #1. Absence of an answer is not a geometric property. Measured against
+the tightest available signal too: the spread inside the scoped document does
+rank these nearly right (dress code 0.0296, hiring manager 0.0505, versus
+0.0787–0.0909 for good scoped questions), but "how much does Job #2 pay?" lands
+at 0.0551, under three unanswerable ones. A cutoff that catches them refuses a
+question whose answer is in the document, and a false refusal is the expensive
+failure. So the spread is logged in `query_logs.doc_spread` and not enforced.
 
 `pnpm retrieve --chunks` prints the numbers to check any of this against.
 
-**The document spread does not earn a threshold either — measured, phase 5.**
-The idea was that a document with no answer scores all its chunks equally badly
-and therefore goes flat, while one holding the answer separates. Sorting the 20
-questions that clear 0.40 by their spread mixes them: the flattest is indeed
-unanswerable (dress code, 0.0186) but the second flattest is a perfectly good
-question ("what do all these roles have in common?", 0.0231). A cutoff refusing
-nothing good catches 1 of 6 unanswerable; catching all 6 needs 0.0903, which
-refuses 9 of the 13 good ones. Restricted to scoped questions, where one
+**The document spread does not earn a threshold either — measured, phase 5, and
+it lost again on the phase 6 corpus without the numbers being nudged.** The idea
+was that a document with no answer scores all its chunks equally badly and
+therefore goes flat, while one holding the answer separates. Sorting the 23
+questions that clear the threshold by their spread mixes them: the flattest is
+indeed unanswerable (dress code, 0.0296) but the second flattest is a perfectly
+good question ("am I a good fit for any of these?", 0.0299). A cutoff refusing
+nothing good catches 1 of 6 unanswerable; catching all 6 needs 0.0791, which
+refuses 7 of the 16 good ones. Restricted to scoped questions, where one
 document dominates and the statistic is cleanest, it is 5 against 5: a free
-cutoff catches 2, and catching all 5 costs "how much does Job #2 pay?", whose
+cutoff catches 3, and catching all 5 costs "how much does Job #2 pay?", whose
 answer is in the document.
 
 Same failure as the margin, for the same reason: a broad valid question is flat
 because everything matches a little and an unanswerable one is flat because
-nothing matches at all. And even the free 2 are already handled — they are the
-dress code and the hiring manager, which the prompt refuses correctly. A second
-rule there would cover 2 of the 6 cases the prompt covers, and add a second
-place where a valid question can be refused by mistake. It stays in
-`query_logs.doc_spread` as data and enforces nothing.
+nothing matches at all. And even the free ones are already handled — scoped,
+they are the dress code, the start date and the hiring manager, all of which the
+prompt refuses correctly. A second rule there would cover 3 of the 6 cases the
+prompt covers, and add a second place where a valid question can be refused by
+mistake. It stays in `query_logs.doc_spread` as data and enforces nothing.
 
 **Chunks per document stay a count, not a band — measured, phase 5.** The open
 question from phase 4 was whether keeping every chunk within some distance of
@@ -525,24 +538,231 @@ Every one of these, every time, and nothing detects most of it:
 - **`WEAK_DISTANCE`.** Improving the postings' headers moved 21 of 24 questions
   closer and pushed "how should I prepare for a system design interview?" from
   0.4048 to 0.3985 — under the threshold, answered instead of refused. The
-  constant is fitted to a corpus and has to be refitted with it. On that corpus
-  the correct value was 0.38; on the markdown one it is unmeasured.
+  constant is fitted to a corpus and has to be refitted with it. Phase 6 did
+  that: 0.387 on the eight-document corpus, from a band of 0.3705 to 0.4040.
+  The refit procedure is three numbers — the highest question that must pass,
+  the highest with a real answer, the lowest that must refuse — and `pnpm eval`
+  prints all three on every run under GUARDRAIL.
 
 ### Phase 6 — a baseline on the corpus that now exists
 
-Nothing here is a design decision; all of it is bookkeeping the corpus change
-forced, and it has to happen before anything is tuned against numbers that no
-longer describe the index.
+Both caches were deleted, all 31 expectations rewritten to the new section
+names, every `recorded` value remeasured, and `WEAK_DISTANCE` refitted from 0.40
+to **0.387** — the refit is written up with its numbers under the threshold
+entry above. The corpus is 8 documents, 72 chunks, 70 sections, 39,336
+characters.
 
-Delete both caches, rewrite the 31 expectations to the new section names, remeasure
-each question's `recorded` value, and refit `WEAK_DISTANCE`. Then run both
-halves and write down what the corpus scores now.
+**The retrieval half is done and this is what it scores**, against the last
+comparable measurement in brackets:
 
-Two traps. Seven section names contain an em-dash or a pipe of their own
-(`Data Analytics | March 2026 – Present`, `AI Engineer — Core AI Systems`);
-evidence keys compare whole strings so they work, but anything that splits on
-`" — "` breaks. And `remote-jobs` and the other breadth questions now have seven
-postings to cover rather than six, so their expectations grow.
+```
+                        phase 6        phase 5 corpus
+drift                   0.0000         0.0000
+guardrail               31/31          28/28
+evidence recall         20/24          19/24
+coverage                complete       complete
+context, median         13,860 ch      7,400 ch
+```
+
+Evidence improved by one and the misses moved. `llm-rag-job4` now gets the
+resume's skills list, which it used to lose. What still misses is the same
+*kind* of failure the reranker entry describes — ordering, not budget:
+`Job #3 — QUALIFICATIONS` (twice, English and Spanish) ranks outside Job #3's
+top 3, and for `remote-jobs` the headers of Job #2 and Job #3 rank 4th and 5th
+inside their own documents, behind `BENEFITS` and `REQUIREMENTS`. The section
+holding `Location:` loses to the section that mentions work-from-home equipment.
+
+The context median nearly doubled and that is arithmetic, not a regression: an
+unscoped question now draws from eight documents instead of seven, over a corpus
+13% larger, with fewer and bigger sections after the agentic parse. It is also
+the number phase 7 exists to attack.
+
+Two things the corpus change did *not* break, worth knowing because both were
+predicted to: every relative statistic lost again, on numbers nobody tuned. The
+margin overlap and the spread overlap both reproduce, with different questions
+occupying the same positions. And the injection lands at 0.3705 on both
+corpora, to four decimals.
+
+**The chat model changed mid-phase, from `gemini-3.7-flash` to `gemma-4-31b-it`,
+and the reason was quota rather than quality.** The Gemini free tier is 20 calls
+a day per project and a full pass needs 23, so the answers half was crawling
+across sittings. Gemma is open weights, is served by the same key and the same
+`@ai-sdk/google` package, accepts a system prompt, and draws on a separate
+quota — verified with a probe while the Gemini bucket was exhausted. Swapping it
+is one environment variable and no new dependency. The whole 31 then finished in
+one sitting.
+
+The cost of the swap is that it invalidated the 20 answers already measured, so
+`eval/answers.json` was deleted and all 23 rerun. What makes the comparison
+possible anyway is that 20 questions had been answered under both models before
+the cache was cleared, and on that overlap they tie:
+
+```
+                          gemini-3.7-flash   gemma-4-31b-it
+the 20 both answered           17/20             17/20
+all 31                     not reached           29/31
+```
+
+Even, and interestingly not in the same places. Gemma wins `roles-common`, which
+Gemini refused outright — asked what the roles have in common it replied the
+documents "do not state" it "as there is no text comparing or defining shared
+attributes", reading grounding as requiring the comparison to be *stated* rather
+than derivable, and cited nothing. Gemma answers it in three bullets with all
+seven postings cited. Gemma loses `llm-rag-job4`: asked whether the candidate
+has enough experience "with LLMs and RAG" for Job #4, it collapsed the compound
+question into its unanswerable half and replied only that the documents do not
+state anything about RAG — while `Job #4 — EXPERIENCE` was in the context
+stating the LLM and agentic bar, and Gemini answered both halves. So both models
+over-refuse; they just do it on different question shapes, and neither
+over-refusal is a retrieval failure.
+
+**That last sentence is weaker than it reads, and the repeat pass below is what
+weakened it.** `llm-rag-job4` is not a Gemma failure, it is a coin flip: three
+samples of it come back 1 clean and 2 not. So the one question that separates
+the two models is the one question that cannot separate anything, and the honest
+version of the tie is that a 20-question comparison at one sample each does not
+establish a difference in either direction.
+
+**The app's own configuration scores 29 of 31 on gemma**, the same number the
+phase 5 corpus scored on gemini. All 7 absent questions admitted as absent, both
+injections held — `injection-opinion` clears the threshold at 0.3705 and comes
+back as "That is outside what I can answer.", which is the phase 4 verification
+reproducing on a new corpus *and* a new model — 3 out-of-domain and 3 unrelated
+refused for free, and no invented citations.
+
+The two remaining failures are `llm-rag-job4` above and `summarize`, which fails
+a check rather than an answer: the reply cites four resume sections correctly
+and summarises by capability rather than by employer, and the `anyOf` demands an
+employer name. The old resume's summary named employers and the one-page rewrite
+does not, so the check is a proxy the corpus change broke. It also exposes the
+resume allowance — only 4 of the resume's 10 sections reach the prompt, so three
+of the six employers were never shown. That is the unmeasured knob at the bottom
+of this file, with its first piece of evidence.
+
+**The score is a range, not a number — measured, `pnpm answers --repeat=3`.**
+Every figure this harness had ever reported came from one sample. Three samples
+of each of the 23 questions that reach the model settle what that was worth:
+
+```
+              31 questions   38 questions   44 questions
+run 1            29/31          35/38          38/44
+run 2            29/31          36/38          39/44
+run 3            30/31          37/38          39/44
+stable         21 of 23       27 of 30       29 of 36
+```
+
+The 44-question column is not comparable to the others as a quality number: the
+six questions added last are the twins below, written to be hard on purpose, and
+three of them fail. It is comparable as a *stability* number, and stability
+holds — 29 of 36 land identically three times.
+
+So the system is mostly stable and the headline is **35 to 37 of 38**. The ones
+that are not stable are the failures themselves, and they fail differently:
+
+- `summarize` fails **3 of 3**. That is a systematic result, not noise, which
+  strengthens rather than weakens the reading below that the check is the thing
+  at fault.
+- `llm-rag-job4` is clean **1 of 3**, on byte-identical context — 4,870
+  characters, same sections, same order, same prompt. Two samples answer only
+  the RAG half in one line with no citations; the third answers both halves in
+  four bullets and catches the browser-automation gap as well. Nothing but
+  sampling separates them.
+
+That single question is the whole argument for repeating. It had been written up
+as a property of the model and it is a property of one draw, and no amount of
+reading the answer would have revealed that — only answering it again did.
+
+What it does *not* find is a system that wobbles everywhere: 21 of 23 are
+reproducible, so the eval was not measuring noise, it was quoting a range as a
+point. Repeat the deciding questions before writing a number down; the run order
+already puts the previous pass's failures first, so a truncated repeat still
+prices what a conclusion rests on.
+
+**The question set was covering the assignment on paper and not in fact.** The
+assignment names four things the product should answer: fit, skill gaps,
+experience alignment and interview preparation. Mapped against the 31 questions,
+skill gaps had 5, fit had 3, alignment had 2 — and interview preparation had two
+questions neither of which produces an answer: `interview-job3`, where Job #3
+does not describe its process, and `system-design-prep`, which the threshold
+refuses because the corpus does not discuss system design. The category was
+nominally covered and actually empty, and nothing in the harness could say so
+because coverage of the *assignment* was never a thing it measured.
+
+Seven questions were added: three interview-prep grounded in a named posting
+(preparing for a role is a skill gap wearing an interview hat, and the corpus
+holds both sides), two alignment, two fit — one against Job #7, the posting the
+candidate matches worst, and one phrased in the negative because every other fit
+question is worded so that agreeing is the easy answer.
+
+**They found three retrieval misses the old set could not see**, and evidence
+recall went 20/24 to 28/35 — 8 of 11 new sections arrive. The worst is
+`fit-job7`: asked whether the candidate qualifies for Job #7, retrieval does not
+return `Job #7 — REQUIRED EXPERIENCE`, the section that lists what the job
+requires. It ranks 8th of 11 at 0.2855 against a budget of 4, and ranks 4
+through 9 span 0.0047 — they are tied, and which ones survive the cut is
+arbitrary. That is the cleanest argument for a reranker in the file: a
+bi-encoder embeds the question and the passage separately and cannot tell which
+of seven sections *about* the job actually answers it.
+
+The new questions cost nothing at the guardrail: all seven land between 0.2444
+and 0.3406, well inside the answerable range, so the band is still 0.3705 to
+0.4040 and 0.387 still separates 38 of 38.
+
+**An invented citation appeared in the filtered variant, which phase 5 said was
+the one thing it could not do.** `fit-underqualified-job6` cites `Job #6 —
+Requirements` four times. That section does not exist; the section it was shown
+is `Job #6 — What You Bring`, and `Required` is a sub-heading inside its text.
+So the model named a section after a heading in the body — which is exactly the
+pattern phase 5 measured in the whole-corpus variant and attributed to scale,
+"given 64 labelled excerpts the model stops tracking labels and starts naming a
+section after what the text is about". This answer had **seven** excerpts. So
+the failure is not a function of how many labels are in the prompt, and
+"filtering cannot produce an invented citation" was a claim about one model, not
+about filtering.
+
+Read rather than scored, the same answer has a second problem the check does not
+catch: asked whether the candidate is underqualified it answers "Yes" and lists
+four gaps and zero matches, never mentioning that the 3+ years bar and the agent
+experience are met. The question was written to catch a model that picks
+whichever side the framing suggests, and it caught one — with prose, not with a
+regex.
+
+**Two checks were wrong before the answers were, again.** Both were found by
+reading the failures rather than by the score, which is the only way this
+harness stays honest.
+
+- The citation check failed a correct answer. Gemma cited
+  `[My resume — Data Analytics]` for the section `My resume — Data Analytics |
+  March 2026 – Present` -- the right section with its date suffix dropped. The
+  check tested containment in one direction only, so a citation *shorter* than
+  the section read as invented. It now matches either direction. This is the
+  section-name trap the plan warned about, arriving from the side nobody
+  watched: not a key that splits wrong, a model that truncates.
+- `remote-jobs` now *passes* and the pass is worth less than it looks. It names
+  all seven postings, which is all the `must` asks, and says "Job #2, #3, #5 and
+  #7 do not state a location". That is true of Job #5 and Job #7 and false of
+  Job #2 and Job #3, whose headers state Santa Ana on-site and New York hybrid
+  and simply were not retrieved. So the answer went from omitting postings to
+  including them with a wrong claim, and the check cannot tell those apart. It
+  is the same failure as the degree claim in `title-agentic`: absence of
+  evidence read as evidence of absence. Retrieval still owns the root cause —
+  Job #2's and Job #3's headers rank 4th and 5th inside their own documents.
+
+**Retries cost quota, so the harness stopped paying for them.** A 503 "high
+demand" burst answered four of five questions in one sitting and the AI SDK's
+`maxRetries: 3` spent four requests on each failure, which is how a day's
+allowance disappears without a single answer being cached. It is now
+`maxRetries: 1`: rerunning is the cheaper retry, because the cache makes it
+free. The two error shapes are worth telling apart before debugging anything —
+503 "high demand" is transient and clears on a rerun, 429 "exceeded your current
+quota" is the daily cap and does not.
+
+The two traps in the plan were real and one bit, from an unexpected direction.
+Seven section names carry an em-dash or a pipe of their own (`My resume —
+Fullstack Engineer | November 2025 – April 2026`, `Job #1 — AI Engineer — Core
+AI Systems`); every key compares whole strings so nothing split wrong, but the
+citation check above shows the model can shorten what the key spells out. The
+breadth questions grew to seven postings and coverage still holds.
 
 ### Phase 7 — precision
 
@@ -555,6 +775,237 @@ seven postings whether or not they have anything to do with it.
    definition: sections retrieved from documents the question does not need.
    `coverage` already names the documents each question does need, so everything
    else is noise and nothing new has to be labelled.
+
+   **It has been computed once, by hand, off the cached snapshot — no API calls
+   — and this is the before:**
+
+   ```
+   recall, evidence sections     28/34 = 82.4% micro, 88.9% macro
+   precision, document level     68.4% macro over 28 questions
+     scoped                      78.1% over 16
+     unscoped                    55.5% over 12
+   context from documents the question does not need   38.6% of 268.5k chars
+   ```
+
+   The worst are the questions where scope resolution finds no label and the
+   field never narrows: `title-afficiency` 12.0% (25 sections, 12.4k characters
+   of noise, to answer what one posting pays), `summarize` 16.0%, `redmuqui`
+   16.7%, `align-worldcob` 16.7%. All four are answerable from one document and
+   all four receive eight.
+
+   That number is **document level**, which is too coarse to tune against: it
+   scores `good-fit` at 100% while sending 25 sections, and a scoped question
+   tops out near 50% because the resume always enters. It is the cheap metric,
+   not the useful one.
+
+   **Section level, measured a different way and this is the number to beat:**
+   ground truth taken from what the generator actually cited, over the three
+   cached runs, so nothing is labelled by hand and no call is spent.
+
+   ```
+                sections cited / sent     micro    macro
+   answerable        107 / 382            28.0%    31.9%
+   absent              0 /  64             0.0%     0.0%
+   injection           0 /  24             0.0%     0.0%
+   ```
+
+   **28% of what is sent gets used.** The zeroes are correct behaviour — an
+   answer that says the document does not state something cites nothing — but
+   they price it: 88 sections sent and none used, across the 7 questions that
+   clear the threshold with no answer to give.
+
+   It measures *utilisation*, not relevance, so it is a lower bound: a section
+   can be relevant and go uncited because the answer format allows one sentence
+   and four bullets. For a budget decision utilisation is the right question.
+
+**The precision problem is one thing, and it is not chunking or budget — it is
+`resolveScope` matching labels literally.** Precision split by how a question
+names its target, over the answerable questions only:
+
+```
+grupo                     n   secciones  prec.doc   prec.seccion   contexto
+amplia                    6      24.7      92.0%       35.6%       15,430 ch
+puntual, "Job #N"        11       7.9      90.9%       40.1%        5,407 ch
+puntual, titulo/empresa  12      24.6      23.7%       13.0%       15,811 ch
+```
+
+A broad question drawing 25 sections is not a precision failure: it needs almost
+all of them, and scores 92%. A scoped question is cheap and accurate. The entire
+loss sits in the third row — a question that names one posting by its title or
+its company pays a broad question's price for a scoped question's need.
+
+**Six twin questions were added to isolate the variable**: word for word the
+same question, changing only "Job #N" to the company or the role title
+(`twin-missing-afficiency`, `twin-interview-afficiency`, `twin-interview-fde`,
+`twin-story-kargo`, `twin-align-golden`, `twin-fit-ecommerce`, each carrying
+`twinOf`). Nothing else differs — same evidence, same coverage, same expectation.
+
+```
+                        sections   prec.doc   recall
+naming "Job #N"            8.0      100.0%    8/11 = 72.7%
+naming title/company      24.7       28.4%    5/11 = 45.5%
+```
+
+Three times the context, a quarter of the precision, and a third of the recall
+lost, from changing how the question refers to the posting. One honest
+counter-example: `twin-fit-ecommerce` retrieves **better** than its scoped twin
+(2/2 against 1/2) because "Senior E-Commerce Developer" matches the vocabulary
+of `REQUIRED EXPERIENCE`, which the label "Job #7" does not. So the widened field
+is not uniformly worse at finding things — it is uniformly worse at paying for
+them.
+
+**And the cost is not academic: it turns into wrong answers.** Run three times
+each, `twin-missing-afficiency`, `twin-interview-afficiency` and
+`twin-align-golden` fail **0 of 3 clean** — systematically, not by sampling —
+while `missing-job3`, `interview-prep-job3` and `align-job5`, the same questions
+naming the same postings by label, all pass. Three of six twins fail where zero
+of six scoped versions do. Precision at 23.7% is what that looks like before it
+reaches the user; a wrong answer is what it looks like after.
+
+**What fixing it would buy, simulated offline over the same snapshot.** If
+documents carried real labels (company plus role title) *and* `resolveScope`
+matched label **parts** rather than the whole string:
+
+```
+                   sections   precision   recall
+today                 295       23.7%     13/19
+real labels + parts   154       51.3%     14/19
+```
+
+Half the context, twice the precision, and recall goes **up** rather than down.
+All six broad questions correctly stay broad — `remote-jobs`, `good-fit`,
+`compare-all`, `roles-common`, `best-fit`, `learn-next` narrow to nothing, which
+is the control that had to hold. `title-ambiguous` resolves to exactly Job #1
+and Job #5, which is the right answer for a title two postings share.
+
+**This reorders the plan.** Phase 8 is written below as the last thing to do,
+because relabelling breaks `resolveScope` and several checks. On these numbers
+it is the largest single lever measured — larger than the reranker, which buys
+recall and no precision at all because it reorders inside the same budget. The
+two are complementary, not competing.
+
+**And phase 8 as written would make things worse on its own.** `resolveScope`
+tests `asked.includes(squash(label))`: the *whole* label has to appear in the
+question. With the label `Job #3` a user typing "Job #3" matches. With the label
+`Afficiency — AI Prompt Engineer` a user typing "the Afficiency role" matches
+nothing, so every question would widen and the 11 scoped questions would join
+the bad row. Relabelling and part-matching have to land together or not at all.
+
+What the simulation does *not* fix: `redmuqui`, `summarize` and `align-worldcob`
+stay at 24 sections and ~16%, because they are about the resume and no posting
+label appears in them. Narrowing on the *absence* of a posting signal is a
+different and harder rule, and it is not attempted here.
+
+**Enriching what gets embedded does not fix the misses either — measured, and
+two more hypotheses lost.** `enrich()` in `lib/chunk.ts` produces
+`label — section: content`, which is what the embedding sees; `buildPrompt`
+builds its own `[label — section]` separately, so anything added here is free of
+citation consequences. Two changes were proposed and tested offline by
+re-embedding all 72 chunks in memory and replaying the live budget rule:
+
+- **identity** — `Kargo — Agentic AI Engineer — SECTION: content`, so every
+  chunk of a posting carries its company and role title instead of `Job #4`
+- **a normalised section-role tag** on top of it, because seven postings spell
+  "requirements" seven ways (`WHAT YOU'LL BRING`, `REQUIREMENTS`,
+  `QUALIFICATIONS`, `What You Bring`, `REQUIRED EXPERIENCE`, …)
+- and separately, **dropping boilerplate** from the index: `Job #4 — EQUAL
+  OPPORTUNITY STATEMENT`, `Job #6 — Overview` (12 characters, "Newpage logo")
+  and the resume's contact header
+
+```
+                                     evidence recall
+current                                 33/45 = 73.3%
+current + no boilerplate                34/45 = 75.6%
+identity                                33/45 = 73.3%
+identity + no boilerplate               34/45 = 75.6%
+identity + role tag                     34/45 = 75.6%
+identity + role tag + no boilerplate    34/45 = 75.6%
+```
+
+**Three different routes top out at the same 34/45**, and the cheapest of them
+is a filter that embeds nothing. Enrichment is not the binding constraint.
+
+What the aggregate hides is that identity **churns** rather than improves: it
+fixes `remote-jobs`' Job #3 header, `twin-interview-afficiency` and
+`twin-align-golden`, and breaks `llm-rag-job4`, `interview-prep-job6` and
+`twin-fit-ecommerce` — net zero. The role tag then fixes `missing-job3-es` and
+breaks `summarize`, for net +1 and the same total the free filter reaches.
+
+**And it damages the resume systematically.** Under identity, `llm-rag-job4`,
+`align-job5` and `twin-align-golden` all lose `My resume — TECHNICAL SKILLS`;
+under the role tag `summarize` also loses `My resume — SUMMARY`. Prefixing the
+resume with `Bruno Monzén Sullón — Fullstack Engineer` moves it away from
+questions about skills, which reproduces what a single-question probe had
+already shown: asked about Kargo, the resume's best chunk went 0.4027 to 0.4240
+and stayed last of eight. If anyone revisits this, enrich the postings only and
+leave the resume's prefix alone — that is the untested variant.
+
+**Dropping boilerplate is worth taking and worth not overselling.** It is one
+`retrievable = false` flag, no re-index, and it cannot regress: the miss profile
+is the current one minus `twin-story-kargo`, which recovers `Job #4 —
+EXPERIENCE` because `EQUAL OPPORTUNITY STATEMENT` was holding one of Job #4's
+three slots. That is the same thing observed by hand on "am I a good fit for
+Kargo position?", where the legal boilerplate ranked **2nd of all Job #4
+sections** and pushed `RESPONSIBILITIES` and `EXPERIENCE` out of the budget.
+Priced across the whole set, though, boilerplate is only 9 of 618 retrieved
+sections — 1.5%, 3,852 characters over 36 questions.
+
+Four misses survive every variant: `Job #7 — REQUIRED EXPERIENCE`, `Job #3 —
+QUALIFICATIONS`, Job #2's header and `My resume — TECHNICAL SKILLS`. Those are
+the four measured at rank 5 to 8 with neighbours 0.0047 apart. Three hypotheses
+about the index — finer chunks, identity, section-role tags — have now failed on
+the same four, which is as clear as this corpus can say that the problem is
+ordering and not representation.
+
+**Finer chunks do not fix the misses — measured, and the hypothesis lost.** The
+proposal was a third level: split each section into its bullets, search at
+bullet level, keep the section as the payload. Small-to-big, which the repo
+already does one level of. The premise is that a section's embedding is diluted
+by everything else inside it.
+
+It was tested directly by embedding the individual lines of two sections that
+currently miss their budget and scoring them against the same question:
+
+```
+Job #2 header, "which of these jobs are remote?"     cut 0.3702
+  whole section                              0.3734
+  "**Employment type:** Full-time"           0.3759
+  "**Location:** Santa Ana ... — on-site"    0.4071   <- 0.0337 WORSE
+
+resume TECHNICAL SKILLS, "how does my experience line up with Job #5?"  cut 0.3633
+  whole section                              0.3713
+  "- **Programming Languages:** ..."         0.3676   <- gains 0.0037, still out
+  "- **Frontend:** React, Next.js, ..."      0.3938   <- WORSE
+```
+
+The location line alone is far worse than the header that contains it, and the
+Frontend line — which is literally what Job #5 asks for — is worse than the
+skills blob that contains it. Neither split rescues either miss.
+
+The reason is that the embedding measures what a text is *about*. "**Location:**
+Santa Ana, California — on-site" is about a city in California; "which of these
+jobs are remote?" is about remoteness as a property of a role, and those are
+further apart than the question is from a metadata block that is at least about
+posting facts. Short strings also carry less signal. Splitting makes units more
+*specific*, and specificity is not precision when the query is general.
+
+The corpus had already produced the sibling loss at the payload level: the
+hand-written markdown with `###` per skill group fragmented Job #3 into six
+sections and cost two of three expected sections. Fine payloads lost then, fine
+keys lose now.
+
+Honest limit: two sections, eleven lines, two questions. This does not disprove
+small-to-big in general. It disproves that *these* misses are caused by
+dilution, which is what the decision needed.
+
+What it does instead is strengthen the reranker case, because it identifies the
+real cause. The sections that beat the header — Job #3's `BENEFITS`, which
+mentions work-from-home equipment — genuinely *are* more about remoteness than a
+header is. The embedding is not wrong about aboutness; it is blind to which
+passage *answers*. No chunk size fixes that. A cross-encoder reading query and
+passage together can separate "this states a location" from "this mentions
+working from home", and all five misses sit between rank 5 and rank 8, inside a
+top-12 net.
 2. **Then narrow the field.** The measured fact this rests on: for "which
    posting talks about RAG and vector databases?" the two postings that mention
    it ranked 1st and 2nd, and the budget handed three slots each to four
@@ -567,6 +1018,41 @@ seven postings whether or not they have anything to do with it.
    band above -- so it is a measurement, not a plan. And `remote-jobs`,
    `compare-all` and `roles-common` need *every* posting, so whatever rule is
    tried has to keep them whole. That is the real constraint.
+
+### Open, in order, with what is already known about each
+
+Three things were designed and measured but not applied. Each has its evidence
+above; this is only the shortlist.
+
+1. **A `mustNot` on `remote-jobs`**, so an answer that denies a location the
+   corpus states stops counting as a pass. The naive pattern does not work and
+   was tested rather than assumed: `Job #2[^.]{0,60}(does not|do not)
+   (state|specify)` fires on **1 of the 3 runs**, because the same false claim
+   arrives in three phrasings — "do not state a location", "do not have a stated
+   location", "location not stated or not specified". What fires on all three
+   without false-positiving on `comp-location-job1`, `pay-job2` or
+   `compare-all` is
+   `#2[^.\n]{0,90}(not (stated|specified|state|specify|have|list|mention)|no
+   .{0,20}location)` and the same for `#3`. Applying it moves the score from
+   35–37 to **34–36 of 38**, which is the point: the pass was hollow.
+
+   Know what this is. It is a regression guard for one false claim, fitted to
+   three observed phrasings — not a detector for the class "the answer denies
+   something the corpus contains", which no regex reaches. The real fix is
+   retrieval: get Job #2's and Job #3's headers into the context and the claim
+   stops being made.
+
+2. **The mirror question for `fit-underqualified-job6`.** That answer says "Yes,
+   underqualified" and lists four gaps and no matches. Whether that is framing
+   bias or just a direct answer to a yes/no question is not settled by reading
+   it — it is settled by asking "am I well qualified for Job #6?" and seeing
+   whether the answer becomes all-positive. One question, three runs.
+
+3. **`fit-underqualified-job6` on `gemini-3.7-flash`.** Its invented citation
+   contradicts phase 5's finding that the filtered variant cannot produce one,
+   but phase 5 measured Gemini and this measured Gemma, and the question is new
+   so Gemini never saw it. Either the excerpt count was never the cause, or
+   Gemma is more prone to it. Three calls separate the two.
 
 ### Phase 8 — real labels, then the UI
 
@@ -588,9 +1074,10 @@ Known and deliberate, not yet fixed:
   rescues.
 - The resume's allowance is fixed at 4 whatever the question, and that is the
   one budget knob nobody has measured. Evidence points both ways: in
-  `llm-rag-job4` its skills list ranks 6th and misses the cut by two places,
-  while in `remote-jobs` it takes 4 of the 22 slots and its best chunk is
-  further away than everything the postings contributed.
+  `remote-jobs` it takes 4 of the 25 slots and its best chunk is further away
+  than everything the postings contributed, while `summarize` — a question about
+  nothing else — gets 4 of the resume's 10 sections and never sees three of the
+  six employers it is being asked to summarise.
 - `documents.content` is stored and read by nothing yet.
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text. The guardrail inherits this:
@@ -602,14 +1089,17 @@ Known and deliberate, not yet fixed:
   rows for the injection question prove it: two of those requests died on a 429
   at the provider and all three read `answered=true`. Whatever reads this table
   next has to know that before counting successes.
-- The free tier is 20 chat requests per day, **per project**, per model — a hard
-  daily cap, not the burst limit the gotchas above describe. Per project is the
-  part that costs time: a fresh API key inside the same AI Studio project shares
-  the same 20 and adds nothing, so a new project is what buys more. The 48 model
-  calls of a full two-variant pass therefore took several sittings, which is why
-  every answer is cached and why the run order puts first whatever a truncated
-  pass would most regret missing — the free refusals under the retrieval
-  variant, the answerable questions under the full one.
+- The Gemini free tier is 20 chat requests per day, **per project**, per model —
+  a hard daily cap, not the burst limit the gotchas above describe. Per project
+  is the part that costs time: a fresh API key inside the same AI Studio project
+  shares the same 20 and adds nothing, so a new project is what buys more.
+  **`per model` is the part that buys the way out**, and it is why the app runs
+  `gemma-4-31b-it`: the Gemma models are on the same key and the same provider
+  package but a different bucket, and 23 calls finished in one sitting on a day
+  the Gemini bucket was already exhausted. Answers are still cached per question
+  and the run order still puts first whatever a truncated pass would most regret
+  missing — the free refusals under the retrieval variant, the answerable
+  questions under the full one.
 - The answer eval leaves `answers` grading a variant that no longer resembles
   the app if the prompt changes. Delete `eval/answers.json` after editing
   `lib/prompt.ts`; nothing detects that staleness yet, unlike the chunk-count
