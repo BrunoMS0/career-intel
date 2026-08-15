@@ -17,21 +17,24 @@ export async function extractOrderedText(
   data: Uint8Array,
   filename = "document.pdf",
   mode?: ParsingMode,
-  instruction?: string,
+  options: Record<string, unknown> = {},
 ): Promise<string> {
   // The default pipeline runs an LLM over each page, which is why it can
   // rewrite content rather than transcribe it. `parse_page_without_llm` is the
   // deterministic layout path.
   //
-  // `system_prompt_append` adds to LlamaParse's own prompt rather than
-  // replacing it, which the sibling `system_prompt` would do. There is nothing
-  // to gain from discarding their prompt engineering and a lot to lose, since
-  // it is what produces the markdown at all.
+  // `options` is passed through rather than enumerated: the reader accepts
+  // around seventy flags and which of them help is an open question being
+  // answered by running them, so `pnpm compare --opt=key=value` reaches all of
+  // them without this file growing a parameter per experiment. Two worth
+  // knowing: `system_prompt_append` adds to LlamaParse's own prompt where the
+  // sibling `system_prompt` would replace it, and `invalidate_cache` is what
+  // stops the server returning the parse made under a previous configuration.
   const reader = new LlamaParseReader({
     resultType: "markdown",
     language: ["en"],
     ...(mode ? { parse_mode: mode } : {}),
-    ...(instruction ? { system_prompt_append: instruction } : {}),
+    ...options,
   });
   const pages = await reader.loadDataAsContent(data, filename);
   return pages.map((page) => page.text).join("\n\n");
