@@ -40,7 +40,7 @@ import { retrieve } from "../lib/retrieval.ts";
 const QUESTIONS = "eval/questions.json";
 const ANSWERS = "eval/answers.json";
 const SEPARATOR = " — ";
-const CHAT_MODEL = process.env.CHAT_MODEL ?? "gemini-3.7-flash";
+const CHAT_MODEL = process.env.CHAT_MODEL ?? "gemma-4-31b-it";
 
 type Question = {
   id: string;
@@ -194,17 +194,27 @@ function check(question: Question, result: Answer): string[] {
   // A citation naming a section the model was not shown is invented, which is
   // the one failure mode the excerpts themselves cannot cause.
   //
-  // Containment rather than equality, because the first run turned up a shape
-  // the format rule does not ask for and does not forbid either: four sources
-  // inside one bracket. Grading that as an invented citation would have failed
-  // a correct answer for punctuation, and section names carry commas of their
-  // own ("React, Postgres, Vercel, Supabase") so splitting on them is worse.
+  // Containment in *either* direction, because both failures the runs turned up
+  // are shapes the format rule does not ask for and does not forbid either.
+  //
+  // The citation can be longer than the section: four sources inside one
+  // bracket. Grading that as invented would fail a correct answer for
+  // punctuation, and section names carry commas of their own ("React, Postgres,
+  // Vercel, Supabase") so splitting on them is worse.
+  //
+  // It can also be shorter. Asked which role fits best, a model cited
+  // "[My resume — Data Analytics]" for the section "My resume — Data Analytics
+  // | March 2026 – Present" -- the right section with the date suffix dropped.
+  // That is a section it was shown, named short, which is the opposite of the
+  // thing this check exists to catch. The corpus invites it: seven section
+  // names carry a date or a second dash of their own.
   const shown = result.sections.map(squash);
   const cited = [...text.matchAll(/\[([^\]\n]+)\]/g)]
     .map((match) => match[1])
     .filter((citation) => /[—–-]/.test(citation));
   for (const citation of cited) {
-    if (!shown.some((section) => squash(citation).includes(section))) {
+    const key = squash(citation);
+    if (!shown.some((section) => key.includes(section) || section.includes(key))) {
       problems.push(`cites "${citation}", never shown`);
     }
   }

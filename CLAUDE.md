@@ -24,7 +24,7 @@ https://github.com/BrunoMS0/career-intel
 | App | Next.js 16, React 19, TypeScript | assignment asks fullstack |
 | DB | Postgres 17 + pgvector 0.8.6 (Docker) | relational data and vectors in one container, metadata filters in the same `WHERE` as the search |
 | Embeddings | `gemini-embedding-001`, 1536 dims | OpenAI account had no credits; Gemini's free tier also gives asymmetric `taskType` |
-| LLM | `gemini-3.7-flash` via `CHAT_MODEL` | free tier; pinned, not an alias, so eval runs stay comparable |
+| LLM | `gemma-4-31b-it` via `CHAT_MODEL` | open weights, own free-tier quota, same key and provider package; pinned, not an alias, so eval runs stay comparable |
 | PDF | LlamaParse (`llama-cloud-services`) | markdown states its headings instead of leaving them to be guessed; `unpdf` stays as the local fidelity yardstick |
 | SQL | `postgres` (postgres.js), raw SQL | three tables; `db/schema.sql` runs on container init, no migration toolchain |
 | Tests | `node --test` | stdlib, no framework |
@@ -582,39 +582,75 @@ margin overlap and the spread overlap both reproduce, with different questions
 occupying the same positions. And the injection lands at 0.3705 on both
 corpora, to four decimals.
 
-**The answers half is partial: 20 of 31 cached, 17 clean.** The free tier is 20
-model calls a day per project and this pass needs 23, so it spans sittings;
-`pnpm answers` resumes from the cache. What the 20 show so far: all 8 refusals
-correct, `injection-poem` held, all absent questions admitted so far, and no
-invented citations anywhere. Three failures:
+**The chat model changed mid-phase, from `gemini-3.7-flash` to `gemma-4-31b-it`,
+and the reason was quota rather than quality.** The Gemini free tier is 20 calls
+a day per project and a full pass needs 23, so the answers half was crawling
+across sittings. Gemma is open weights, is served by the same key and the same
+`@ai-sdk/google` package, accepts a system prompt, and draws on a separate
+quota — verified with a probe while the Gemini bucket was exhausted. Swapping it
+is one environment variable and no new dependency. The whole 31 then finished in
+one sitting.
 
-- `remote-jobs` names 4 postings of 7, worse than the 4 of 6 phase 5 recorded,
-  and for three separate reasons now. Job #2's and Job #3's headers never
-  reached the context (retrieval). Job #5's header *did* and was dropped anyway
-  (answer shape — one sentence and four bullets cannot carry seven postings).
-  Job #7 states no location anywhere in five pages, so there is nothing to
-  retrieve and a complete answer has to say so. It said nothing about it.
-- `summarize` fails a check, not an answer. The reply cites four resume sections
-  correctly and summarises by capability rather than by employer, and the
-  `anyOf` demands an employer name. Worth reading before deciding: the old
-  resume's summary section named employers and the new one-page version does
-  not, so the check was a proxy that the rewrite broke. It also exposes the
-  resume allowance — only 4 of the resume's 10 sections reached the prompt, so
-  three of the six employers were never shown at all. That is the unmeasured
-  knob listed at the bottom of this file, with its first piece of evidence.
-- `roles-common` is new and is the prompt over-applying its own rule. All seven
-  postings reached the context, 17.3k characters of them, and the model replied
-  that the documents "do not state what all these roles have in common, as
-  there is no text comparing or defining shared attributes across all seven job
-  postings" — and cited nothing. It read grounding as requiring the comparison
-  to be *stated* rather than derivable, which is the opposite failure to the
-  invented citation and the first time the refusal rule has cost an answer that
-  the excerpts fully support. `compare-all` is the same shape and is not
-  measured yet; it is the first question of the next sitting.
+The cost of the swap is that it invalidated the 20 answers already measured, so
+`eval/answers.json` was deleted and all 23 rerun. What makes the comparison
+possible anyway is that 20 questions had been answered under both models before
+the cache was cleared, and on that overlap they tie:
 
-Still uncached, and worth knowing which: `compare-all`, the six absent
-questions, `injection-opinion` — the only automated test of the prompt's
-data-not-instructions rule — and the three title-worded ones.
+```
+                          gemini-3.7-flash   gemma-4-31b-it
+the 20 both answered           17/20             17/20
+all 31                     not reached           29/31
+```
+
+Even, and interestingly not in the same places. Gemma wins `roles-common`, which
+Gemini refused outright — asked what the roles have in common it replied the
+documents "do not state" it "as there is no text comparing or defining shared
+attributes", reading grounding as requiring the comparison to be *stated* rather
+than derivable, and cited nothing. Gemma answers it in three bullets with all
+seven postings cited. Gemma loses `llm-rag-job4`, and loses it the same way:
+asked whether the candidate has enough experience "with LLMs and RAG" for Job
+#4, it collapsed the compound question into its unanswerable half and replied
+only that the documents do not state anything about RAG — while `Job #4 —
+EXPERIENCE` was in the context stating the LLM and agentic bar, and Gemini
+answered both halves. So both models over-refuse; they just do it on different
+question shapes, and neither over-refusal is a retrieval failure.
+
+**The app's own configuration scores 29 of 31 on gemma**, the same number the
+phase 5 corpus scored on gemini. All 7 absent questions admitted as absent, both
+injections held — `injection-opinion` clears the threshold at 0.3705 and comes
+back as "That is outside what I can answer.", which is the phase 4 verification
+reproducing on a new corpus *and* a new model — 3 out-of-domain and 3 unrelated
+refused for free, and no invented citations.
+
+The two remaining failures are `llm-rag-job4` above and `summarize`, which fails
+a check rather than an answer: the reply cites four resume sections correctly
+and summarises by capability rather than by employer, and the `anyOf` demands an
+employer name. The old resume's summary named employers and the one-page rewrite
+does not, so the check is a proxy the corpus change broke. It also exposes the
+resume allowance — only 4 of the resume's 10 sections reach the prompt, so three
+of the six employers were never shown. That is the unmeasured knob at the bottom
+of this file, with its first piece of evidence.
+
+**Two checks were wrong before the answers were, again.** Both were found by
+reading the failures rather than by the score, which is the only way this
+harness stays honest.
+
+- The citation check failed a correct answer. Gemma cited
+  `[My resume — Data Analytics]` for the section `My resume — Data Analytics |
+  March 2026 – Present` -- the right section with its date suffix dropped. The
+  check tested containment in one direction only, so a citation *shorter* than
+  the section read as invented. It now matches either direction. This is the
+  section-name trap the plan warned about, arriving from the side nobody
+  watched: not a key that splits wrong, a model that truncates.
+- `remote-jobs` now *passes* and the pass is worth less than it looks. It names
+  all seven postings, which is all the `must` asks, and says "Job #2, #3, #5 and
+  #7 do not state a location". That is true of Job #5 and Job #7 and false of
+  Job #2 and Job #3, whose headers state Santa Ana on-site and New York hybrid
+  and simply were not retrieved. So the answer went from omitting postings to
+  including them with a wrong claim, and the check cannot tell those apart. It
+  is the same failure as the degree claim in `title-agentic`: absence of
+  evidence read as evidence of absence. Retrieval still owns the root cause —
+  Job #2's and Job #3's headers rank 4th and 5th inside their own documents.
 
 **Retries cost quota, so the harness stopped paying for them.** A 503 "high
 demand" burst answered four of five questions in one sitting and the AI SDK's
@@ -625,11 +661,12 @@ free. The two error shapes are worth telling apart before debugging anything —
 503 "high demand" is transient and clears on a rerun, 429 "exceeded your current
 quota" is the daily cap and does not.
 
-The two traps in the plan were real and neither bit. Seven section names carry
-an em-dash or a pipe of their own (`My resume — Fullstack Engineer | November
-2025 – April 2026`, `Job #1 — AI Engineer — Core AI Systems`); every key
-compares whole strings and the citation check squashes punctuation, so both
-pass. The breadth questions grew to seven postings and coverage still holds.
+The two traps in the plan were real and one bit, from an unexpected direction.
+Seven section names carry an em-dash or a pipe of their own (`My resume —
+Fullstack Engineer | November 2025 – April 2026`, `Job #1 — AI Engineer — Core
+AI Systems`); every key compares whole strings so nothing split wrong, but the
+citation check above shows the model can shorten what the key spells out. The
+breadth questions grew to seven postings and coverage still holds.
 
 ### Phase 7 — precision
 
@@ -690,14 +727,17 @@ Known and deliberate, not yet fixed:
   rows for the injection question prove it: two of those requests died on a 429
   at the provider and all three read `answered=true`. Whatever reads this table
   next has to know that before counting successes.
-- The free tier is 20 chat requests per day, **per project**, per model — a hard
-  daily cap, not the burst limit the gotchas above describe. Per project is the
-  part that costs time: a fresh API key inside the same AI Studio project shares
-  the same 20 and adds nothing, so a new project is what buys more. The 48 model
-  calls of a full two-variant pass therefore took several sittings, which is why
-  every answer is cached and why the run order puts first whatever a truncated
-  pass would most regret missing — the free refusals under the retrieval
-  variant, the answerable questions under the full one.
+- The Gemini free tier is 20 chat requests per day, **per project**, per model —
+  a hard daily cap, not the burst limit the gotchas above describe. Per project
+  is the part that costs time: a fresh API key inside the same AI Studio project
+  shares the same 20 and adds nothing, so a new project is what buys more.
+  **`per model` is the part that buys the way out**, and it is why the app runs
+  `gemma-4-31b-it`: the Gemma models are on the same key and the same provider
+  package but a different bucket, and 23 calls finished in one sitting on a day
+  the Gemini bucket was already exhausted. Answers are still cached per question
+  and the run order still puts first whatever a truncated pass would most regret
+  missing — the free refusals under the retrieval variant, the answerable
+  questions under the full one.
 - The answer eval leaves `answers` grading a variant that no longer resembles
   the app if the prompt changes. Delete `eval/answers.json` after editing
   `lib/prompt.ts`; nothing detects that staleness yet, unlike the chunk-count
