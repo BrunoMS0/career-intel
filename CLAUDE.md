@@ -1134,6 +1134,38 @@ rule. And "eJam" is four characters, so Job #2 cannot be resolved by company at
 all: the five-character floor exists because "ejam" sits inside ordinary Spanish
 words like "dejamos", and the honest price of that floor is one posting.
 
+**And the precision turned into correctness, which is the part that was not
+guaranteed.** The 27 cached answers whose context the change moved were deleted
+and rerun three times each. Both caches graded with the same checks:
+
+```
+                          before          after
+score, 3 runs           38–39 / 44     40–42 / 44
+answerable               23 / 29        25 / 29
+context, mean            11,023 ch      8,291 ch
+landed the same 3x       29 / 36        32 / 36
+```
+
+The three twins written up above as failing **0 of 3 systematically** are where
+the gain is, and two of them are simply gone:
+
+```
+twin-missing-afficiency     0/3  ->  3/3
+twin-interview-afficiency   0/3  ->  3/3
+twin-interview-fde          2/3  ->  3/3
+twin-align-golden           0/3  ->  1/3   still flips
+```
+
+Nothing regressed. `llm-rag-job4` (1/3), `summarize` (0/3) and
+`fit-underqualified-job6` (2/3) come back byte-for-byte the same verdicts, which
+is what makes the four above readable as the change rather than as sampling.
+
+`twin-align-golden` is the honest residual and it is the ordering failure, not a
+scope one: it still loses `Job #5 — REQUIREMENTS` to `ABOUT GOLDEN ANALYTICS`,
+which is the section that matches because the question says "Golden Analytics".
+Naming the company narrows the field correctly and then bends the ranking inside
+it. That is the reranker's job and nothing here touches it.
+
 **The eval harness stopped caching scope.** `distances.json` still holds one
 scope per question, but it is now rewritten on every run instead of only when a
 question is measured. Caching it is precisely how a change to `resolveScope`
