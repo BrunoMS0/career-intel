@@ -333,10 +333,35 @@ the swap was decided on and the tool for judging a new document.
 What the measurement actually found, since two of the assumptions above it were
 wrong:
 
-- **Heading depth is not explicit.** LlamaParse emitted 77 headings across the
-  corpus and not one `##`. The hope that `Required` would come back as a child
-  of `What You Bring` did not survive; sections are flat and
-  `lib/chunk-markdown.ts` says so.
+- **Heading depth is not explicit — under the default parse mode.** It emitted
+  77 headings across the corpus and not one `##`, so sections are flat and
+  `lib/chunk-markdown.ts` says so. That sentence used to be written as a fact
+  about LlamaParse and it is not: the reader takes a `parse_mode`, nothing ever
+  passed one, and the default `parse_page_with_llm` is what flattens.
+
+  `parse_page_with_agent` was measured later, over all seven documents, and is
+  better on every axis that was ever complained about here: real `##` and `###`,
+  100% fidelity, 0% unlabeled, no `&#x26;` escaping, no words split mid-token,
+  and none of the four bullets the default promoted to headings in Job #3. Its
+  own failure is different and worse to detect — it read the whole resume as one
+  section, because that document titles with letter-spaced capitals and the
+  agent takes those for emphasis rather than headings.
+
+  A `system_prompt_append` fixes that (`extractOrderedText` takes it now, and
+  `pnpm compare --prompt-file=`): asked to treat bold and letter-spaced labels
+  as headings, the resume came back with 10 headings instead of 1, correctly
+  nested. It does not fix consistency. Five of the six employers became
+  `### <role>`; the sixth, identical in shape and on the same page, stayed bold
+  in the body. Depth stayed uneven too, despite being asked for explicitly:
+  `## SUMMARY` and `## EXPERIENCE` next to `# EDUCATION` and `# TECHNICAL
+  SKILLS`. And on Job #3 the same instruction split the technology table into
+  six `##` sections, which is the fragmentation measured elsewhere in this file
+  as a retrieval regression.
+
+  So agentic plus an instruction is the configuration to use if PDFs must be
+  supported, and it is still a parser whose structure varies inside a single
+  document with nothing in the output saying so — `compareFidelity()` reports
+  100% for all of it, because no word was lost. Only structure was.
 - **A heading with an empty body is ambiguous.** In Job #6 it is a real parent
   (`What You'll Do`); in Job #1 it is a skills-list entry the model promoted
   (`Git/GitHub`, `Azure DevOps`). Same shape, so no hierarchy is inferred and

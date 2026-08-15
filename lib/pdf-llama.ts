@@ -17,14 +17,21 @@ export async function extractOrderedText(
   data: Uint8Array,
   filename = "document.pdf",
   mode?: ParsingMode,
+  instruction?: string,
 ): Promise<string> {
   // The default pipeline runs an LLM over each page, which is why it can
   // rewrite content rather than transcribe it. `parse_page_without_llm` is the
   // deterministic layout path.
+  //
+  // `system_prompt_append` adds to LlamaParse's own prompt rather than
+  // replacing it, which the sibling `system_prompt` would do. There is nothing
+  // to gain from discarding their prompt engineering and a lot to lose, since
+  // it is what produces the markdown at all.
   const reader = new LlamaParseReader({
     resultType: "markdown",
     language: ["en"],
     ...(mode ? { parse_mode: mode } : {}),
+    ...(instruction ? { system_prompt_append: instruction } : {}),
   });
   const pages = await reader.loadDataAsContent(data, filename);
   return pages.map((page) => page.text).join("\n\n");

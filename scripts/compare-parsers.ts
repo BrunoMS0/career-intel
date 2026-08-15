@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { chunkDocument, unlabeledShare, type Chunk } from "../lib/chunk.ts";
@@ -21,6 +22,10 @@ const CACHE = ".cache/llamaparse";
 const args = process.argv.slice(2);
 const showSections = args.includes("--sections");
 const mode = args.find((arg) => arg.startsWith("--mode="))?.slice(7);
+// A file rather than a flag value, so the instruction can be edited and rerun
+// without quoting a paragraph on a Windows shell.
+const promptPath = args.find((arg) => arg.startsWith("--prompt-file="))?.slice(14);
+const instruction = promptPath ? readFileSync(promptPath, "utf8").trim() : undefined;
 const paths = args.filter((arg) => !arg.startsWith("--"));
 
 if (paths.length === 0) {
@@ -30,7 +35,11 @@ if (paths.length === 0) {
 
 async function llamaCached(path: string): Promise<string> {
   mkdirSync(CACHE, { recursive: true });
-  const suffix = mode ? `.${mode}` : "";
+  // The instruction is part of the key: without it, editing the prompt and
+  // rerunning would hand back the parse made under the previous one.
+  const suffix =
+    (mode ? `.${mode}` : "") +
+    (instruction ? `.${createHash("sha1").update(instruction).digest("hex").slice(0, 8)}` : "");
   const cached = join(CACHE, `${basename(path, ".pdf")}${suffix}.md`);
   if (existsSync(cached)) return readFileSync(cached, "utf8");
 
@@ -39,6 +48,7 @@ async function llamaCached(path: string): Promise<string> {
     new Uint8Array(readFileSync(path)),
     basename(path),
     mode as Parameters<typeof llamaExtract>[2],
+    instruction,
   );
   writeFileSync(cached, text);
   console.error(`  parsed ${basename(path)} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
