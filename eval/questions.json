@@ -454,10 +454,10 @@
     "recorded": 0.3406,
     "scope": ["Job #4"],
     "refuse": false,
-    "evidence": ["Job #4 — EXPERIENCE", "My resume — SUMMARY"],
+    "evidence": ["Job #4 — EXPERIENCE"],
     "coverage": ["Job #4", "My resume"],
     "anyOf": ["RedMuqui", "WORLDCOB", "Ramón", "PXL", "PROTECSO", "choropleth", "n8n", "CRM"],
-    "why": "Interview preparation crossed with experience alignment, and the question that prices the resume allowance a second time. Answering it well means naming actual projects, which live in the resume's six experience entries — and the budget hands the resume 4 sections out of 10 no matter what is asked. `summarize` produced the first evidence that this is too few; this question asks for the same material under a scoped question, where the resume competes with only one posting instead of seven. If it succeeds where `summarize` failed, the allowance is not the problem and the field width is."
+    "why": "Interview preparation crossed with experience alignment, and the question that prices the resume allowance a second time. Answering it well means naming actual projects, which live in the resume's six experience entries — and the budget hands the resume 4 sections out of 10 no matter what is asked. `summarize` produced the first evidence that this is too few; this question asks for the same material under a scoped question, where the resume competes with only one posting instead of seven.\n\nThe resume side is deliberately *not* in evidence, because the first version of this expectation named `My resume — SUMMARY` and that was wrong. Retrieval returns the four experience entries — RedMuqui, PROTECSO, WORLDCOB, SINERGIA — and drops SUMMARY at rank 7, which is the correct behaviour for a question asking which *projects* to talk about. The expectation was failing retrieval for doing the right thing. No single resume section is the answer here, so coverage plus the employer names in anyOf are what check that side."
   },
 
   {
