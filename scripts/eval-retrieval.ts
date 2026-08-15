@@ -36,7 +36,8 @@ type Question = {
   id: string;
   q: string;
   class: "answerable" | "absent" | "domain" | "unrelated" | "injection";
-  recorded: number;
+  /** The distance phase 4 recorded. Absent on questions added since. */
+  recorded?: number;
   scope: string[];
   refuse: boolean;
   evidence: string[];
@@ -230,6 +231,12 @@ console.log(mirrored.join("\n"));
 console.log("\n\nDRIFT — measured best hit against the value phase 4 recorded\n");
 let worst = { id: "", delta: 0 };
 for (const question of questions) {
+  // Questions added after phase 4 have nothing to drift from. Their measured
+  // distance is printed once so it can be written back as their baseline.
+  if (question.recorded === undefined) {
+    console.log(`  ${question.id.padEnd(20)} no baseline yet, measures ${bestHit(question).toFixed(4)}`);
+    continue;
+  }
   const delta = Math.abs(bestHit(question) - question.recorded);
   if (delta > worst.delta) worst = { id: question.id, delta };
   if (verbose || delta > 0.001) {

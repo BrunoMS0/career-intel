@@ -354,5 +354,40 @@
     "coverage": [],
     "admitsAbsence": true,
     "why": "An absent-evidence question with no document to be absent from: no posting mentions a recruiter and none is named, so it drifts past 0.40 and the threshold catches it. The only absent question that refuses, and it refuses for the right reason."
+  },
+
+  {
+    "id": "title-agentic",
+    "q": "what skills am I missing for the agentic AI engineer role?",
+    "class": "answerable",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #4 — Experience", "My resume — T E C H N I C A L S K I L L S"],
+    "coverage": ["Job #4", "My resume"],
+    "anyOf": ["browser automation", "browser"],
+    "mustNot": ["no degree", "degree is not", "lacks a degree", "not (state|list|mention).{0,12}degree"],
+    "why": "The same question as missing-job3 but naming the role by its title instead of its label. Agentic AI Engineer is Job #4's heading and belongs to no other posting, so a reader knows exactly which one is meant -- and resolveScope does not, because it only matches labels literally. All seven documents enter and each posting gets the broad budget. The clean gap is browser automation, which Job #4 asks for and the resume never mentions.\n\nThe mustNot records what the first run did. It named browser automation correctly and then listed the degree as a fourth gap, \"as no degree is stated in your resume\" -- while the resume states a Bachelor's in Computer Engineering from PUCP in a section the budget did not retrieve. The claim is true of the excerpts and false of the document, and a reader has no way to tell those apart. It is the one failure mode a whole-corpus prompt cannot have, and it is the price of filtering: absence of evidence reads as evidence of absence when the evidence was merely not selected."
+  },
+  {
+    "id": "title-afficiency",
+    "q": "how much does the Afficiency role pay?",
+    "class": "answerable",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #3 — AI Prompt Engineer / AI Application Engineer"],
+    "coverage": ["Job #3"],
+    "must": ["100", "120"],
+    "why": "Identifies the posting by company rather than by title or label. Afficiency appears only in Job #3's Company Description, while the pay line (USD 100,000-120,000 / year) is in a different section entirely -- so the question matches one section and the answer lives in another, with five irrelevant postings holding budget in between. pay-job2 is the scoped twin of this question and answers it from four sections; this one has to do it from three."
+  },
+  {
+    "id": "title-ambiguous",
+    "q": "what does the AI engineer role require?",
+    "class": "answerable",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #5 — Requirements", "Job #1 — Required"],
+    "coverage": ["Job #1", "Job #5"],
+    "must": ["Job #5", "Job #1"],
+    "why": "A title two postings share, which was not obvious until the corpus was checked: Job #5 is titled AI Engineer and Job #1 is AI Engineer — Core AI Systems at Gamma. Job #4 (Agentic AI Engineer) and Job #3 (AI Prompt Engineer) are near misses that should not be folded in. So the correct answer covers exactly two postings and says so, and the failure to watch for is presenting one posting's requirements as \"the\" role's. The first run passed: it answered about \"the AI Engineer roles\" in the plural and cited Job #1 and Job #5 and nothing else."
   }
 ]

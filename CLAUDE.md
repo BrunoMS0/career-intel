@@ -229,6 +229,23 @@ keeping the number of labelled excerpts small enough that the model can still
 say which one a claim came from. That threshold is somewhere below seven
 documents and 64 sections, and above whatever a two-document corpus would be.
 
+**And filtering has a failure mode of its own, which this comparison found by
+looking for it.** Asked what skills are missing for "the agentic AI engineer
+role", the app answers correctly about browser automation and then lists the
+degree as a gap, "as no degree is stated in your resume" -- while the resume
+states a Bachelor's in Computer Engineering from PUCP, in a section the budget
+did not retrieve. The claim is true of the excerpts and false of the document,
+and the reader has no way to tell those apart.
+
+This is the exact inverse of the invented citation: the whole-corpus variant
+cannot make this mistake, because nothing was withheld from it. So the two
+configurations fail in opposite directions -- filtering risks asserting an
+absence that is only an absence of evidence, while not filtering risks
+attributing a real fact to a section that does not exist. The app's rate is 2
+failures in 31 against the whole corpus's 6 in 28, so the trade is still worth
+taking, but "missing evidence produces incompleteness, not invention" was too
+generous a summary and this is the counter-example.
+
 Two honest qualifications. The wide-context answers are not uniformly worse:
 asked which role fits best, the filtered run picks Job #4 on skills alone while
 the whole-corpus run picks Job #6 and reasons about the candidate being in Peru
@@ -408,8 +425,18 @@ and in the other 61 the winning chunk already is the whole section. And the
 scope resolver only matches labels literally, so a question naming a role by its
 title ("the agentic AI engineer role") widens to all seven documents even though
 the distances identify the right posting on their own — the search knows, and
-the budget has no way to act on it. Three title-worded questions belong in the
-question set before that is worth deciding.
+the budget has no way to act on it.
+
+Three title-worded questions were added to measure what that costs, since nobody
+outside this repo will type "Job #1". Retrieval handles them better than
+expected: naming the role by title, by company ("how much does the Afficiency
+role pay?") and by a title two postings share all retrieve their expected
+sections and clear the threshold, with no scope resolved and every posting
+holding budget. The corpus taught something in the process -- Job #1 is titled
+"AI Engineer — Core AI Systems", so "what does the AI engineer role require?"
+has two right answers and the model gave both, in the plural, citing Job #1 and
+Job #5 and no near miss. The cost of the widened field showed up somewhere else
+entirely, in the degree claim written up above.
 
 **Phase 5 done: the generation half too.** `pnpm answers` runs every question
 through retrieval, the guardrail and the prompt, caches each answer, and grades
@@ -419,9 +446,11 @@ every citation names a section the model was actually shown. No LLM judge: it
 would double the calls and add a second model to trust, and the report prints
 each answer beside its expectation so the parts a string cannot judge are read.
 
-The app's own configuration scores **27 of 28**, with `remote-jobs` the only
-failure and its cause established above. All 7 absent questions are admitted as
-absent, both injections hold, and 116 citations contain no invented one.
+The app's own configuration scores **29 of 31**. Two failures: `remote-jobs`,
+whose cause is the answer shape rather than retrieval, and `title-agentic`,
+which asserts the resume states no degree when the section stating one was not
+retrieved. All 7 absent questions are admitted as absent, both injections hold,
+and 116 citations contain no invented one.
 
 Two of the harness's own checks were wrong before the answers were, and both
 were caught by reading rather than by the score:
