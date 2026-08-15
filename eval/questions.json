@@ -508,5 +508,90 @@
     "coverage": ["Job #6", "My resume"],
     "anyOf": ["Kubernetes", "MLOps", "vector database", "LangGraph", "certification", "Master"],
     "why": "Fit asked in the negative, because every other fit question in the set is phrased so that agreeing is the easy answer. Job #6 is the interesting case for it: the candidate clears the 3+ years bar and the agent experience, and does not state vector databases, Kubernetes, MLOps serving or a certification. So the honest answer is neither yes nor no, and the failure to watch for is a model that picks whichever side the question's framing suggests — here, agreeing that the candidate is underqualified without weighing what does match."
+  },
+
+  {
+    "id": "twin-missing-afficiency",
+    "q": "what skills am I missing for the Afficiency role?",
+    "class": "answerable",
+    "recorded": 0.3144,
+    "twinOf": "missing-job3",
+    "scope": [],
+    "refuse": false,
+    "evidence": [
+      "Job #3 — TECHNICAL SKILLS / EXPOSURE",
+      "Job #3 — QUALIFICATIONS",
+      "My resume — TECHNICAL SKILLS"
+    ],
+    "coverage": ["Job #3", "My resume"],
+    "anyOf": ["Flask", "Copilot Studio", "Azure DevOps", "Oracle", "insurance", "4\\+ years"],
+    "why": "Word for word `missing-job3` with the company name in place of the label. Nobody outside this repo types \"Job #3\", so this is the phrasing the product actually receives, and the pair exists to price what that costs: same information need, same expectation, and the only variable is whether `resolveScope` finds a literal match. It does not, so the field goes from two documents to eight."
+  },
+  {
+    "id": "twin-interview-afficiency",
+    "q": "what should I brush up on before interviewing at Afficiency?",
+    "class": "answerable",
+    "recorded": 0.3124,
+    "twinOf": "interview-prep-job3",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #3 — TECHNICAL SKILLS / EXPOSURE", "My resume — TECHNICAL SKILLS"],
+    "coverage": ["Job #3", "My resume"],
+    "anyOf": ["Flask", "Copilot Studio", "Azure DevOps", "Oracle"],
+    "mustNot": ["STAR method", "behavio(u)?ral question", "mock interview"],
+    "why": "The twin of `interview-prep-job3`. Interview preparation is the category most likely to be typed with a company name rather than a label — nobody prepares for \"Job #3\", they prepare for Afficiency."
+  },
+  {
+    "id": "twin-interview-fde",
+    "q": "how should I prepare for an interview for the Forward Deployed Engineer role?",
+    "class": "answerable",
+    "recorded": 0.3000,
+    "twinOf": "interview-prep-job6",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #6 — What You Bring"],
+    "coverage": ["Job #6", "My resume"],
+    "anyOf": ["LangGraph", "AutoGen", "vector database", "Kubernetes", "MLOps", "agent"],
+    "mustNot": ["STAR method", "behavio(u)?ral question", "mock interview"],
+    "why": "The twin of `interview-prep-job6`, naming the role by its title. Forward Deployed Engineer belongs to no other posting, so a reader knows exactly which one is meant and the retriever does not."
+  },
+  {
+    "id": "twin-story-kargo",
+    "q": "which of my projects should I talk about in a Kargo interview?",
+    "class": "answerable",
+    "recorded": 0.3068,
+    "twinOf": "interview-story-job4",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #4 — EXPERIENCE"],
+    "coverage": ["Job #4", "My resume"],
+    "anyOf": ["RedMuqui", "WORLDCOB", "Ramón", "PXL", "PROTECSO", "choropleth", "n8n", "CRM"],
+    "why": "The twin of `interview-story-job4`. This pair is the interesting one for the resume allowance: scoped, the resume competes with one posting, and by company name it competes with seven, while the answer needs the resume's experience entries either way."
+  },
+  {
+    "id": "twin-align-golden",
+    "q": "how does my experience line up with what Golden Analytics asks for?",
+    "class": "answerable",
+    "recorded": 0.2825,
+    "twinOf": "align-job5",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #5 — REQUIREMENTS", "My resume — TECHNICAL SKILLS"],
+    "coverage": ["Job #5", "My resume"],
+    "anyOf": ["React", "TypeScript", "Postgres", "Supabase", "Vercel", "Vite"],
+    "why": "The twin of `align-job5`. Golden Analytics is named only in Job #5's title section and its ABOUT GOLDEN ANALYTICS section, so the company name matches text in one document out of eight — the search knows which posting is meant and the budget has no way to act on it."
+  },
+  {
+    "id": "twin-fit-ecommerce",
+    "q": "am I a good fit for the Senior E-Commerce Developer role?",
+    "class": "answerable",
+    "recorded": 0.2348,
+    "twinOf": "fit-job7",
+    "scope": [],
+    "refuse": false,
+    "evidence": ["Job #7 — REQUIRED EXPERIENCE", "My resume — TECHNICAL SKILLS"],
+    "coverage": ["Job #7", "My resume"],
+    "anyOf": ["CheckoutChamp", "Shopify", "e-commerce", "ecommerce", "funnel"],
+    "why": "The twin of `fit-job7`, and the pair where the widened field should hurt most. The scoped version already fails to retrieve `Job #7 — REQUIRED EXPERIENCE` at rank 8 of 11 with a budget of 4; unscoped the budget drops to 3, so the same section has to climb higher from further back."
   }
 ]

@@ -644,12 +644,17 @@ Every figure this harness had ever reported came from one sample. Three samples
 of each of the 23 questions that reach the model settle what that was worth:
 
 ```
-                31 questions      38 questions
-run 1              29/31             35/38
-run 2              29/31             36/38
-run 3              30/31             37/38
-stable          21 of 23          27 of 30
+              31 questions   38 questions   44 questions
+run 1            29/31          35/38          38/44
+run 2            29/31          36/38          39/44
+run 3            30/31          37/38          39/44
+stable         21 of 23       27 of 30       29 of 36
 ```
+
+The 44-question column is not comparable to the others as a quality number: the
+six questions added last are the twins below, written to be hard on purpose, and
+three of them fail. It is comparable as a *stability* number, and stability
+holds — 29 of 36 land identically three times.
 
 So the system is mostly stable and the headline is **35 to 37 of 38**. The ones
 that are not stable are the failures themselves, and they fail differently:
@@ -812,6 +817,84 @@ seven postings whether or not they have anything to do with it.
    It measures *utilisation*, not relevance, so it is a lower bound: a section
    can be relevant and go uncited because the answer format allows one sentence
    and four bullets. For a budget decision utilisation is the right question.
+
+**The precision problem is one thing, and it is not chunking or budget — it is
+`resolveScope` matching labels literally.** Precision split by how a question
+names its target, over the answerable questions only:
+
+```
+grupo                     n   secciones  prec.doc   prec.seccion   contexto
+amplia                    6      24.7      92.0%       35.6%       15,430 ch
+puntual, "Job #N"        11       7.9      90.9%       40.1%        5,407 ch
+puntual, titulo/empresa  12      24.6      23.7%       13.0%       15,811 ch
+```
+
+A broad question drawing 25 sections is not a precision failure: it needs almost
+all of them, and scores 92%. A scoped question is cheap and accurate. The entire
+loss sits in the third row — a question that names one posting by its title or
+its company pays a broad question's price for a scoped question's need.
+
+**Six twin questions were added to isolate the variable**: word for word the
+same question, changing only "Job #N" to the company or the role title
+(`twin-missing-afficiency`, `twin-interview-afficiency`, `twin-interview-fde`,
+`twin-story-kargo`, `twin-align-golden`, `twin-fit-ecommerce`, each carrying
+`twinOf`). Nothing else differs — same evidence, same coverage, same expectation.
+
+```
+                        sections   prec.doc   recall
+naming "Job #N"            8.0      100.0%    8/11 = 72.7%
+naming title/company      24.7       28.4%    5/11 = 45.5%
+```
+
+Three times the context, a quarter of the precision, and a third of the recall
+lost, from changing how the question refers to the posting. One honest
+counter-example: `twin-fit-ecommerce` retrieves **better** than its scoped twin
+(2/2 against 1/2) because "Senior E-Commerce Developer" matches the vocabulary
+of `REQUIRED EXPERIENCE`, which the label "Job #7" does not. So the widened field
+is not uniformly worse at finding things — it is uniformly worse at paying for
+them.
+
+**And the cost is not academic: it turns into wrong answers.** Run three times
+each, `twin-missing-afficiency`, `twin-interview-afficiency` and
+`twin-align-golden` fail **0 of 3 clean** — systematically, not by sampling —
+while `missing-job3`, `interview-prep-job3` and `align-job5`, the same questions
+naming the same postings by label, all pass. Three of six twins fail where zero
+of six scoped versions do. Precision at 23.7% is what that looks like before it
+reaches the user; a wrong answer is what it looks like after.
+
+**What fixing it would buy, simulated offline over the same snapshot.** If
+documents carried real labels (company plus role title) *and* `resolveScope`
+matched label **parts** rather than the whole string:
+
+```
+                   sections   precision   recall
+today                 295       23.7%     13/19
+real labels + parts   154       51.3%     14/19
+```
+
+Half the context, twice the precision, and recall goes **up** rather than down.
+All six broad questions correctly stay broad — `remote-jobs`, `good-fit`,
+`compare-all`, `roles-common`, `best-fit`, `learn-next` narrow to nothing, which
+is the control that had to hold. `title-ambiguous` resolves to exactly Job #1
+and Job #5, which is the right answer for a title two postings share.
+
+**This reorders the plan.** Phase 8 is written below as the last thing to do,
+because relabelling breaks `resolveScope` and several checks. On these numbers
+it is the largest single lever measured — larger than the reranker, which buys
+recall and no precision at all because it reorders inside the same budget. The
+two are complementary, not competing.
+
+**And phase 8 as written would make things worse on its own.** `resolveScope`
+tests `asked.includes(squash(label))`: the *whole* label has to appear in the
+question. With the label `Job #3` a user typing "Job #3" matches. With the label
+`Afficiency — AI Prompt Engineer` a user typing "the Afficiency role" matches
+nothing, so every question would widen and the 11 scoped questions would join
+the bad row. Relabelling and part-matching have to land together or not at all.
+
+What the simulation does *not* fix: `redmuqui`, `summarize` and `align-worldcob`
+stay at 24 sections and ~16%, because they are about the resume and no posting
+label appears in them. Narrowing on the *absence* of a posting signal is a
+different and harder rule, and it is not attempted here.
 
 **Finer chunks do not fix the misses — measured, and the hypothesis lost.** The
 proposal was a third level: split each section into its bullets, search at
