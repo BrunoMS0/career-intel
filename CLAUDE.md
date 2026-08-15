@@ -788,13 +788,80 @@ seven postings whether or not they have anything to do with it.
    16.7%, `align-worldcob` 16.7%. All four are answerable from one document and
    all four receive eight.
 
-   Two honest limits on the number. It is **document level**, not section level:
-   `evidence` names the sections that must arrive, not every section that would
-   be reasonable, so there is no ground truth for section-level precision and
-   inventing one would be labelling to taste. And a scoped question scores at
-   most ~50% by construction, because the resume always enters — `pay-job2` is
-   8 sections of which 4 are the resume, which really is noise for that
-   question but is a design choice rather than a ranking failure.
+   That number is **document level**, which is too coarse to tune against: it
+   scores `good-fit` at 100% while sending 25 sections, and a scoped question
+   tops out near 50% because the resume always enters. It is the cheap metric,
+   not the useful one.
+
+   **Section level, measured a different way and this is the number to beat:**
+   ground truth taken from what the generator actually cited, over the three
+   cached runs, so nothing is labelled by hand and no call is spent.
+
+   ```
+                sections cited / sent     micro    macro
+   answerable        107 / 382            28.0%    31.9%
+   absent              0 /  64             0.0%     0.0%
+   injection           0 /  24             0.0%     0.0%
+   ```
+
+   **28% of what is sent gets used.** The zeroes are correct behaviour — an
+   answer that says the document does not state something cites nothing — but
+   they price it: 88 sections sent and none used, across the 7 questions that
+   clear the threshold with no answer to give.
+
+   It measures *utilisation*, not relevance, so it is a lower bound: a section
+   can be relevant and go uncited because the answer format allows one sentence
+   and four bullets. For a budget decision utilisation is the right question.
+
+**Finer chunks do not fix the misses — measured, and the hypothesis lost.** The
+proposal was a third level: split each section into its bullets, search at
+bullet level, keep the section as the payload. Small-to-big, which the repo
+already does one level of. The premise is that a section's embedding is diluted
+by everything else inside it.
+
+It was tested directly by embedding the individual lines of two sections that
+currently miss their budget and scoring them against the same question:
+
+```
+Job #2 header, "which of these jobs are remote?"     cut 0.3702
+  whole section                              0.3734
+  "**Employment type:** Full-time"           0.3759
+  "**Location:** Santa Ana ... — on-site"    0.4071   <- 0.0337 WORSE
+
+resume TECHNICAL SKILLS, "how does my experience line up with Job #5?"  cut 0.3633
+  whole section                              0.3713
+  "- **Programming Languages:** ..."         0.3676   <- gains 0.0037, still out
+  "- **Frontend:** React, Next.js, ..."      0.3938   <- WORSE
+```
+
+The location line alone is far worse than the header that contains it, and the
+Frontend line — which is literally what Job #5 asks for — is worse than the
+skills blob that contains it. Neither split rescues either miss.
+
+The reason is that the embedding measures what a text is *about*. "**Location:**
+Santa Ana, California — on-site" is about a city in California; "which of these
+jobs are remote?" is about remoteness as a property of a role, and those are
+further apart than the question is from a metadata block that is at least about
+posting facts. Short strings also carry less signal. Splitting makes units more
+*specific*, and specificity is not precision when the query is general.
+
+The corpus had already produced the sibling loss at the payload level: the
+hand-written markdown with `###` per skill group fragmented Job #3 into six
+sections and cost two of three expected sections. Fine payloads lost then, fine
+keys lose now.
+
+Honest limit: two sections, eleven lines, two questions. This does not disprove
+small-to-big in general. It disproves that *these* misses are caused by
+dilution, which is what the decision needed.
+
+What it does instead is strengthen the reranker case, because it identifies the
+real cause. The sections that beat the header — Job #3's `BENEFITS`, which
+mentions work-from-home equipment — genuinely *are* more about remoteness than a
+header is. The embedding is not wrong about aboutness; it is blind to which
+passage *answers*. No chunk size fixes that. A cross-encoder reading query and
+passage together can separate "this states a location" from "this mentions
+working from home", and all five misses sit between rank 5 and rank 8, inside a
+top-12 net.
 2. **Then narrow the field.** The measured fact this rests on: for "which
    posting talks about RAG and vector databases?" the two postings that mention
    it ranked 1st and 2nd, and the budget handed three slots each to four
