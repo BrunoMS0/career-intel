@@ -265,8 +265,7 @@
     "evidence": [],
     "coverage": [],
     "admitsAbsence": true,
-    "mustNot": ["you should learn", "worth learning"],
-    "why": "A career question the documents cannot ground. Refused before the model."
+    "why": "A career question the documents cannot ground. Refused before the model. It carries no mustNot on purpose: the first attempt forbade \"worth learning\" and failed a correct refusal, because a refusal restates the question before declining it. A forbidden phrase has to be one the question does not contain -- Paris, guanciale -- or it measures echo instead of invention."
   },
   {
     "id": "negotiate-raise",
