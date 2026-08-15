@@ -36,7 +36,11 @@ type Question = {
   id: string;
   q: string;
   class: "answerable" | "absent" | "domain" | "unrelated" | "injection";
-  /** The distance phase 4 recorded. Absent on questions added since. */
+  /**
+   * The best hit measured when the corpus was last rebaselined. Absent on a
+   * question added since, which prints its measured value so it can be written
+   * back. A corpus change invalidates all of them at once.
+   */
   recorded?: number;
   scope: string[];
   refuse: boolean;
@@ -228,7 +232,7 @@ console.log(mirrored.join("\n"));
 
 // ------------------------------------------------------------------- the report
 
-console.log("\n\nDRIFT — measured best hit against the value phase 4 recorded\n");
+console.log("\n\nDRIFT — measured best hit against the recorded baseline\n");
 let worst = { id: "", delta: 0 };
 for (const question of questions) {
   // Questions added after phase 4 have nothing to drift from. Their measured
@@ -353,8 +357,8 @@ function spreadOf(question: Question): number {
 }
 
 console.log("\n\nSPREAD — decision 1: does document flatness earn a threshold of its own\n");
-console.log("  Only the questions the 0.40 threshold already lets through: the rest are");
-console.log("  refused on distance and a second rule cannot improve on that.\n");
+console.log(`  Only the questions the ${WEAK_DISTANCE} threshold already lets through: the rest`);
+console.log("  are refused on distance and a second rule cannot improve on that.\n");
 
 const passing = questions
   .filter((question) => bestHit(question) <= WEAK_DISTANCE)
