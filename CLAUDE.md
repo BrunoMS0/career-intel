@@ -50,7 +50,12 @@ https://github.com/BrunoMS0/career-intel
 - `eval/distances.json` — every question against every chunk, measured once.
   Candidate rules are arithmetic over this file, so comparing two of them costs
   no embedding calls and both see identical numbers
+- `eval/answers.json` — every answer both variants produced, cached per question
+  so an interrupted pass resumes and a finished one can be reread for free
 - `scripts/eval-retrieval.ts` — the retrieval half of the harness
+- `scripts/eval-answers.ts` — the generation half, and the no-retrieval variant
+- `lib/prompt.ts` — the system prompt, shared by the chat route and the harness
+  so the harness cannot measure a copy that has drifted from what ships
 
 ## Commands
 
@@ -63,6 +68,7 @@ pnpm compare <file.pdf>...            # both parsers side by side, with fidelity
 pnpm chunks ["<label>"] [--full]      # what is actually indexed, from the db
 pnpm retrieve [--chunks] "<question>" # what a question retrieves, with distances
 pnpm eval [--verbose]                 # retrieval eval over eval/questions.json
+pnpm answers [--full] [--report]      # answer eval; --full adds the no-retrieval variant
 docker compose exec db psql -U postgres -d career_intel
 ```
 
@@ -191,6 +197,70 @@ What did pay was one constant: the broad budget went from 2 to 3, which recovers
 one more expected section for 26% more context. `CHUNKS_PER_DOCUMENT` in
 `lib/retrieval.ts` carries the numbers.
 
+**Retrieval is load-bearing at seven documents, and not for the reason usually
+given — measured, phase 5.** The corpus is 34.7k characters, roughly 8.7k
+tokens, so it fits in the context window several times over and the obvious
+question is why filter it at all. `pnpm answers --full` answers that by running
+all 28 questions twice: once through the app's retrieval, once with every
+section of every document in the prompt and no guardrail. Same prompt, same
+model, same citation contract; the only variable is whether anything was
+filtered out.
+
+```
+                     retrieval   whole corpus
+answerable clean       12/13         7/13
+citations              116           152
+invented citations       0             7
+context                8.9k         33.5k chars
+```
+
+The variant with strictly more information answers worse. Every one of its six
+failures is an answerable question, and seven citations name sections that were
+never in the prompt: `[My resume — EXPERIENCE]`, `[Job #4 — Location]`,
+`[Job #4 — Compensation]`, `[Job #5 — Location]` and so on. The pattern is one
+thing repeated -- given 64 labelled excerpts the model stops tracking labels and
+starts naming a section after what the text is about. None of it is a factual
+hallucination; the numbers it cites are real. It is the attribution that breaks,
+and attribution is the product: career advice that cannot be traced back to the
+posting is not usable.
+
+So retrieval is not earning its place by making the corpus fit. It earns it by
+keeping the number of labelled excerpts small enough that the model can still
+say which one a claim came from. That threshold is somewhere below seven
+documents and 64 sections, and above whatever a two-document corpus would be.
+
+Two honest qualifications. The wide-context answers are not uniformly worse:
+asked which role fits best, the filtered run picks Job #4 on skills alone while
+the whole-corpus run picks Job #6 and reasons about the candidate being in Peru
+and five of six postings requiring US attendance -- better judgement, reached by
+seeing everything, and delivered with one invented citation in it. And this is
+one model, one corpus, one run per question; 7 against 0 is a pattern, not a
+proof.
+
+**The threshold buys cost, not correctness — measured, phase 5.** The same
+comparison prices the 0.40 guardrail, because the whole-corpus variant has none.
+All 16 refusal-shaped questions -- 7 absent, 3 out-of-domain, 3 unrelated, 2
+injections, and the recruiter question -- come out clean in *both* variants. The
+prompt alone refuses "give me a recipe for pasta carbonara" with "the provided
+documents do not state a recipe for pasta carbonara; I looked for recipes and
+references to pasta carbonara across all excerpts."
+
+What the threshold contributes is 8 model calls saved out of 28 and an instant
+answer instead of a slow one. That is worth keeping and it is not what it was
+sold as. The division of labour phase 4 described still holds, with the prices
+now attached: the threshold filters topic cheaply, the prompt filters evidence
+correctly, and only the prompt is load-bearing.
+
+**Structured skill extraction is not needed — measured, phase 5.** The worry was
+that vector search cannot do set difference, and the fix would be to extract
+skills per chunk and diff them. Asked what skills are missing for Job #3, the
+model named Flask, Microsoft Copilot Studio, RAG/vector databases/embeddings and
+Azure DevOps -- four real gaps -- and named none of React, PostgreSQL or
+TypeScript, which is exactly the trap: Job #3 asks for "React.js" and the resume
+says "React". It resolves the synonym from the two full texts. Extracting skills
+into a structure would introduce the normalisation failure it was meant to
+prevent.
+
 **Reranking still deferred, but no longer for lack of a case.** `pnpm eval`
 scores 14 of the 19 expected sections. Three of the five misses survive every
 budget rule measured, because they are ordering failures rather than volume
@@ -198,11 +268,22 @@ ones: Job #3's `Experience` ranks 9th of its 14 chunks, the resume's skills list
 6th of 10, and Job #3's header — the one holding `Location:` — 8th of 14. All
 three sit inside a top-10 net, which is exactly what a reranker is for.
 
-It waits on the generation half regardless, because a missing section is not yet
-a wrong answer: `llm-rag-job4` loses the skills list but keeps the summary and
-the Ramón AI entry, so the question may well answer correctly anyway. Retrieval
-recall is a proxy, chosen because it can be measured without the model, and the
-model is what settles which misses cost anything.
+The generation half then settled what those misses cost, and it is less than the
+recall number suggests. `llm-rag-job4` loses the skills list and answers
+correctly from three other resume sections, catching on its own that Job #4
+never asks for RAG. `missing-job3` loses `Job #3 — Experience` and the answer
+simply lacks the 4-years-against-3 gap while getting the four technology gaps
+right. And where evidence is missing the model does not invent: asked which
+roles are remote with Job #3's header absent, it said Job #3 "includes provided
+work-from-home equipment but does not state whether the role itself is remote"
+rather than guessing from the equipment.
+
+So a reranker would buy completeness, not correctness. And it would buy less of
+it than it looks: `remote-jobs` is the one answerable question that fails, and
+it fails in the whole-corpus variant too, naming four postings of six with every
+location line present in the prompt. The binding constraint there is the answer
+shape -- one opening sentence and at most four bullets cannot carry six postings
+-- which no reranker touches. Retrieval owns half of that failure at most.
 
 ## Gotchas
 
@@ -330,7 +411,32 @@ the distances identify the right posting on their own — the search knows, and
 the budget has no way to act on it. Three title-worded questions belong in the
 question set before that is worth deciding.
 
-Next is the generation half, then phase 6 (UI polish, app Dockerfile).
+**Phase 5 done: the generation half too.** `pnpm answers` runs every question
+through retrieval, the guardrail and the prompt, caches each answer, and grades
+it on rules a string can check -- the facts that must appear, the inventions
+that must not, whether an unanswerable question is admitted as such, and whether
+every citation names a section the model was actually shown. No LLM judge: it
+would double the calls and add a second model to trust, and the report prints
+each answer beside its expectation so the parts a string cannot judge are read.
+
+The app's own configuration scores **27 of 28**, with `remote-jobs` the only
+failure and its cause established above. All 7 absent questions are admitted as
+absent, both injections hold, and 116 citations contain no invented one.
+
+Two of the harness's own checks were wrong before the answers were, and both
+were caught by reading rather than by the score:
+
+- A correct answer cited four sources inside one bracket, which the citation
+  check read as one invented section. Sections carry commas of their own
+  ("React, Postgres, Vercel, Supabase"), so the check matches by containment
+  now rather than splitting on punctuation.
+- "Is it worth learning Rust in 2026?" was failed for saying "worth learning" --
+  in the sentence declining to answer it. A forbidden phrase cannot be one the
+  question already contains, or it measures echo instead of invention.
+
+A harness that never fails itself is not being read.
+
+Next is phase 6 (UI polish, app Dockerfile).
 
 Known and deliberate, not yet fixed:
 
@@ -355,8 +461,15 @@ Known and deliberate, not yet fixed:
   rows for the injection question prove it: two of those requests died on a 429
   at the provider and all three read `answered=true`. Whatever reads this table
   next has to know that before counting successes.
-- The free tier was 20 chat requests per day, per project, per model — a hard
-  daily cap rather than the burst limit the gotchas above describe. The project
-  now has billing attached and runs on the standard tier, so a full pass fits in
-  one sitting; the harness caches per question anyway, because that assumption
-  is one billing problem away from being wrong again.
+- The free tier is 20 chat requests per day, **per project**, per model — a hard
+  daily cap, not the burst limit the gotchas above describe. Per project is the
+  part that costs time: a fresh API key inside the same AI Studio project shares
+  the same 20 and adds nothing, so a new project is what buys more. The 48 model
+  calls of a full two-variant pass therefore took several sittings, which is why
+  every answer is cached and why the run order puts first whatever a truncated
+  pass would most regret missing — the free refusals under the retrieval
+  variant, the answerable questions under the full one.
+- The answer eval leaves `answers` grading a variant that no longer resembles
+  the app if the prompt changes. Delete `eval/answers.json` after editing
+  `lib/prompt.ts`; nothing detects that staleness yet, unlike the chunk-count
+  check that guards `eval/distances.json`.
