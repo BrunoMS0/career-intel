@@ -89,15 +89,31 @@ async function llamaCached(path: string): Promise<string> {
  * their own. That is what a section label looks like when the parser declined
  * to promote it, and it is the shape the sixth employer came back as while the
  * other five became headings.
+ *
+ * Lines close under a heading do not count. A promoted entry legitimately
+ * carries a line or two of emphasised detail beneath it -- a date range, an
+ * employer, a location -- and counting those made a resume with correct
+ * structure score 18 orphans while a resume collapsed into one section scored
+ * 16. The metric was ranking the good parse below the broken one.
  */
 function structure(markdown: string) {
   const level = (n: number) =>
     (markdown.match(new RegExp(`^#{${n}}\\s+\\S`, "gm")) ?? []).length;
 
-  const orphans = markdown
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => /^(\*{1,3}[^*\n]+\*{1,3}\s*)+$/.test(line) && line.length <= 90).length;
+  let sinceHeading = 99;
+  let orphans = 0;
+  for (const raw of markdown.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^#{1,6}\s+\S/.test(line)) {
+      sinceHeading = 0;
+      continue;
+    }
+    if (sinceHeading > 2 && line.length <= 90 && /^(\*{1,3}[^*\n]+\*{1,3}\s*)+$/.test(line)) {
+      orphans++;
+    }
+    sinceHeading++;
+  }
 
   return { levels: [level(1), level(2), level(3)], orphans };
 }
