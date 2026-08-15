@@ -770,6 +770,31 @@ seven postings whether or not they have anything to do with it.
    definition: sections retrieved from documents the question does not need.
    `coverage` already names the documents each question does need, so everything
    else is noise and nothing new has to be labelled.
+
+   **It has been computed once, by hand, off the cached snapshot — no API calls
+   — and this is the before:**
+
+   ```
+   recall, evidence sections     28/34 = 82.4% micro, 88.9% macro
+   precision, document level     68.4% macro over 28 questions
+     scoped                      78.1% over 16
+     unscoped                    55.5% over 12
+   context from documents the question does not need   38.6% of 268.5k chars
+   ```
+
+   The worst are the questions where scope resolution finds no label and the
+   field never narrows: `title-afficiency` 12.0% (25 sections, 12.4k characters
+   of noise, to answer what one posting pays), `summarize` 16.0%, `redmuqui`
+   16.7%, `align-worldcob` 16.7%. All four are answerable from one document and
+   all four receive eight.
+
+   Two honest limits on the number. It is **document level**, not section level:
+   `evidence` names the sections that must arrive, not every section that would
+   be reasonable, so there is no ground truth for section-level precision and
+   inventing one would be labelling to taste. And a scoped question scores at
+   most ~50% by construction, because the resume always enters — `pay-job2` is
+   8 sections of which 4 are the resume, which really is noise for that
+   question but is a design choice rather than a ranking failure.
 2. **Then narrow the field.** The measured fact this rests on: for "which
    posting talks about RAG and vector databases?" the two postings that mention
    it ranked 1st and 2nd, and the budget handed three slots each to four
@@ -782,6 +807,41 @@ seven postings whether or not they have anything to do with it.
    band above -- so it is a measurement, not a plan. And `remote-jobs`,
    `compare-all` and `roles-common` need *every* posting, so whatever rule is
    tried has to keep them whole. That is the real constraint.
+
+### Open, in order, with what is already known about each
+
+Three things were designed and measured but not applied. Each has its evidence
+above; this is only the shortlist.
+
+1. **A `mustNot` on `remote-jobs`**, so an answer that denies a location the
+   corpus states stops counting as a pass. The naive pattern does not work and
+   was tested rather than assumed: `Job #2[^.]{0,60}(does not|do not)
+   (state|specify)` fires on **1 of the 3 runs**, because the same false claim
+   arrives in three phrasings — "do not state a location", "do not have a stated
+   location", "location not stated or not specified". What fires on all three
+   without false-positiving on `comp-location-job1`, `pay-job2` or
+   `compare-all` is
+   `#2[^.\n]{0,90}(not (stated|specified|state|specify|have|list|mention)|no
+   .{0,20}location)` and the same for `#3`. Applying it moves the score from
+   35–37 to **34–36 of 38**, which is the point: the pass was hollow.
+
+   Know what this is. It is a regression guard for one false claim, fitted to
+   three observed phrasings — not a detector for the class "the answer denies
+   something the corpus contains", which no regex reaches. The real fix is
+   retrieval: get Job #2's and Job #3's headers into the context and the claim
+   stops being made.
+
+2. **The mirror question for `fit-underqualified-job6`.** That answer says "Yes,
+   underqualified" and lists four gaps and no matches. Whether that is framing
+   bias or just a direct answer to a yes/no question is not settled by reading
+   it — it is settled by asking "am I well qualified for Job #6?" and seeing
+   whether the answer becomes all-positive. One question, three runs.
+
+3. **`fit-underqualified-job6` on `gemini-3.7-flash`.** Its invented citation
+   contradicts phase 5's finding that the filtered variant cannot produce one,
+   but phase 5 measured Gemini and this measured Gemma, and the question is new
+   so Gemini never saw it. Either the excerpt count was never the cause, or
+   Gemma is more prone to it. Three calls separate the two.
 
 ### Phase 8 — real labels, then the UI
 
