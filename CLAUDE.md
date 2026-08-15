@@ -465,7 +465,91 @@ were caught by reading rather than by the score:
 
 A harness that never fails itself is not being read.
 
-Next is phase 6 (UI polish, app Dockerfile).
+## Where this stands, and the plan from here
+
+**Read this first if you are picking the project up.** The numbers above were
+measured against a corpus of PDFs. That corpus has since been replaced twice and
+is about to be replaced a third time, so some of them are stale in a specific,
+listed way.
+
+**The documents become markdown, and PDF support goes away entirely.** The
+reasoning is the user's and it is sound: a RAG like this one is an internal tool,
+the assignment asks for the resume and the postings to be *uploaded* and then
+live in the system, so the storage format is a choice rather than a constraint —
+and PDF is the worst available choice for it. Removing the parser removes, at
+once, the hosted service the user's real resume was being uploaded to, a
+language model rewriting documents on the way in (it translated a posting to
+Spanish once and silently dropped a location requirement another time), the
+irreproducibility of an ingest, and the dependency on being online.
+
+The eight markdown documents carry YAML frontmatter with 17 declared fields —
+company, location, work_mode, salary_min/max, seniority, primary_stack — and
+real heading depth, `#` through `###`. Both of those are new capabilities the
+code does not use yet.
+
+### What a corpus change invalidates
+
+Every one of these, every time, and nothing detects most of it:
+
+- `eval/distances.json` — guarded, refuses to run when the chunk count moves.
+- `eval/answers.json` — not guarded. Delete it by hand.
+- The section names in all 31 expectations in `eval/questions.json`, which are
+  matched literally.
+- The `recorded` baseline on each question, which is what the drift check reads.
+- **`WEAK_DISTANCE`.** Improving the postings' headers moved 21 of 24 questions
+  closer and pushed "how should I prepare for a system design interview?" from
+  0.4048 to 0.3985 — under the threshold, answered instead of refused. The
+  constant is fitted to a corpus and has to be refitted with it. On that corpus
+  the correct value was 0.38; on the markdown one it is unmeasured.
+
+### Phase 6 — markdown only
+
+Delete the PDF path: `lib/pdf.ts`, `lib/pdf-llama.ts`, `compareFidelity()`,
+`pnpm inspect`, `pnpm compare`, the `llama-cloud-services` and `unpdf`
+dependencies, and whatever in `lib/chunk.ts` only existed to back them.
+`splitBySize`, `enrich` and `unlabeledShare` stay; `chunkDocument()` and its
+heading heuristics have no remaining caller.
+
+Ingest the eight markdown files, rewrite the expectations to the new section
+names, refit the threshold. Deliverable: a fresh baseline on the new corpus with
+the chunker exactly as it is, so the next phase's changes are measured against a
+known point rather than against a moving one.
+
+### Phase 7 — precision
+
+The goal changes here. Everything so far measured whether the needed section
+*arrives*; nothing measures how much arrives that was not needed.
+
+1. **Add the metric first**, so the two changes below have a before. The honest
+   cheap definition: sections retrieved from documents the question does not
+   need. `coverage` already names the documents each question does need, so
+   everything else is noise and nothing new has to be labelled.
+2. **Heading depth.** `lib/chunk-markdown.ts` flattens `#`, `##` and `###`
+   alike, and its canary test fails the day a document arrives with real `##` —
+   that day is now. This is the deferred work, and the cost of not doing it is
+   measured: Afficiency's technology table went from one 2348-character section
+   to six of 49 to 310 characters, six slots competing for a budget of four, and
+   `missing-job3` fell from 2 of 3 expected sections to 1 of 3 with Back-End,
+   the one holding Flask, at rank 10.
+3. **Frontmatter into columns.** The fields are declared by the author rather
+   than inferred by anything, which is what makes this safe where extracting
+   skills was not. It also turns the one failure retrieval could never fix into
+   a `where`: "which of these jobs are remote?" fails in *both* the retrieval
+   and whole-corpus variants, and `work_mode: remote` answers it exactly.
+
+Measure 2 and 3 separately. Two changes in one measurement do not say which one
+worked.
+
+### Phase 8 — real labels, then the UI
+
+"Job #1" is not a name anyone would type, and `resolveScope` matches labels
+literally, so every question that names a role by title or company widens to the
+whole corpus. Real labels ("Gamma — AI Engineer") make literal matching hit far
+more often for free. It goes last because it breaks `resolveScope`, the scope
+expectations, and the several checks that assert on "Job #N".
+
+Then the UI polish and the app Dockerfile that were always phase 6, plus the
+markdown rendering the answers still do not do.
 
 Known and deliberate, not yet fixed:
 
