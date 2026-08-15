@@ -116,7 +116,6 @@ for (const [index, question] of pending.entries()) {
       order by d.label, c.position
     `;
     snapshot.distances[question.id] = distances.map((row) => Number(row.d.toFixed(6)));
-    snapshot.scope[question.id] = await resolveScope(question.q);
     // Written after every question, not at the end: an interrupted run keeps
     // what it paid for and the next one resumes instead of starting over.
     writeFileSync(SNAPSHOT, JSON.stringify(snapshot, null, 1));
@@ -131,6 +130,15 @@ for (const [index, question] of pending.entries()) {
     process.exit(1);
   }
 }
+
+// Scope is remeasured every run, unlike the distances above. It costs one local
+// query and no embedding call, and caching it is exactly how a change to
+// resolveScope would go unnoticed: the numbers would still parse, they would
+// just describe the rule that used to run. Phase 7 changed that rule.
+for (const question of questions) {
+  snapshot.scope[question.id] = await resolveScope(question.q);
+}
+writeFileSync(SNAPSHOT, JSON.stringify(snapshot, null, 1));
 
 // ------------------------------------------------------------- the current rule
 
@@ -205,10 +213,13 @@ const bestHit = (question: Question) => {
 
 // --------------------------------------------------- is the mirror still honest
 
-// Two shapes, because the budget branches on how many documents are in play:
-// one question naming a posting, one naming none.
+// Three shapes, because the budget branches on how many documents are in play
+// and scope now resolves two different ways: a question naming a posting by its
+// label, one naming none, and one naming a company. The third is the phase 7
+// path -- without it the mirror would agree with the SQL while never running the
+// rule that changed.
 const mirrored: string[] = [];
-for (const id of ["pay-job2", "best-fit"]) {
+for (const id of ["pay-job2", "best-fit", "title-afficiency"]) {
   const question = questions.find((entry) => entry.id === id)!;
   const real = (await retrieve(question.q))
     .map((section) => `${section.label}${SEPARATOR}${section.section}`)

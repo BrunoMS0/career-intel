@@ -1,6 +1,7 @@
 import { sql } from "./db.ts";
 import { embedForQuery, toVector } from "./embedding.ts";
 import type { DocumentKind } from "./ingest.ts";
+import { scopeFor, type DocumentIdentity } from "./scope.ts";
 
 export type RetrievedSection = {
   label: string;
@@ -53,27 +54,12 @@ export const MAX_FOCUSED_DOCUMENTS = 3;
  */
 export const RESUME_CHUNKS = 4;
 
-const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-/**
- * Finds which documents a question is about, so "How does my experience align
- * with Job #2?" reads Job #2 and not the other five postings.
- *
- * Labels are matched literally rather than inferred by a model: they are short,
- * unique and user-chosen, and a wrong guess here silently answers about the
- * wrong job. Punctuation and spacing are squashed so "Job #2", "job 2" and
- * "JOB2" all land.
- *
- * ponytail: substring match, so with more than nine postings "Job #1" would
- * also match a question about "Job #12". Match on word boundaries if the corpus
- * ever gets that big.
- */
+/** The rule itself is in lib/scope.ts; this is the query that feeds it. */
 export async function resolveScope(query: string): Promise<string[]> {
-  const documents = await sql<{ label: string }[]>`
-    select label from documents where kind = 'job'
+  const documents = await sql<DocumentIdentity[]>`
+    select label, company, role_title from documents where kind = 'job'
   `;
-  const asked = squash(query);
-  return documents.map((d) => d.label).filter((label) => asked.includes(squash(label)));
+  return scopeFor(query, documents);
 }
 
 /**

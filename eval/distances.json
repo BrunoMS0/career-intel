@@ -3812,9 +3812,18 @@
   "injection-opinion": [],
   "injection-poem": [],
   "recruiter-opinion": [],
-  "title-agentic": [],
-  "title-afficiency": [],
-  "title-ambiguous": [],
+  "title-agentic": [
+   "Job #1",
+   "Job #4",
+   "Job #5"
+  ],
+  "title-afficiency": [
+   "Job #3"
+  ],
+  "title-ambiguous": [
+   "Job #1",
+   "Job #5"
+  ],
   "interview-prep-job3": [
    "Job #3"
   ],
@@ -3834,11 +3843,23 @@
   "fit-underqualified-job6": [
    "Job #6"
   ],
-  "twin-missing-afficiency": [],
-  "twin-interview-afficiency": [],
-  "twin-interview-fde": [],
-  "twin-story-kargo": [],
-  "twin-align-golden": [],
-  "twin-fit-ecommerce": []
+  "twin-missing-afficiency": [
+   "Job #3"
+  ],
+  "twin-interview-afficiency": [
+   "Job #3"
+  ],
+  "twin-interview-fde": [
+   "Job #6"
+  ],
+  "twin-story-kargo": [
+   "Job #4"
+  ],
+  "twin-align-golden": [
+   "Job #5"
+  ],
+  "twin-fit-ecommerce": [
+   "Job #7"
+  ]
  }
 }

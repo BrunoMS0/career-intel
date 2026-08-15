@@ -387,33 +387,33 @@
     "id": "title-agentic",
     "q": "what skills am I missing for the agentic AI engineer role?",
     "class": "answerable",
-    "recorded": 0.2651,
-    "scope": [],
+    "recorded": 0.2749,
+    "scope": ["Job #1", "Job #4", "Job #5"],
     "refuse": false,
     "evidence": ["Job #4 — EXPERIENCE", "My resume — TECHNICAL SKILLS"],
     "coverage": ["Job #4", "My resume"],
     "anyOf": ["browser automation", "browser"],
     "mustNot": ["no degree", "degree is not", "lacks a degree", "not (state|list|mention).{0,12}degree"],
-    "why": "The same question as missing-job3 but naming the role by its title instead of its label. Agentic AI Engineer is Job #4's heading and belongs to no other posting, so a reader knows exactly which one is meant -- and resolveScope does not, because it only matches labels literally. All eight documents enter and each posting gets the broad budget. The clean gap is browser automation, which Job #4 asks for and the resume never mentions.\n\nThe mustNot records what the first run did. It named browser automation correctly and then listed the degree as a fourth gap, \"as no degree is stated in your resume\" -- while the resume states a Bachelor's in Computer Engineering from PUCP in a section the budget did not retrieve. The claim is true of the excerpts and false of the document, and a reader has no way to tell those apart. It is the one failure mode a whole-corpus prompt cannot have, and it is the price of filtering: absence of evidence reads as evidence of absence when the evidence was merely not selected."
+    "why": "The same question as missing-job3 but naming the role by its title instead of its label. Agentic AI Engineer is Job #4's heading and belongs to no other posting, so a reader knows exactly which one is meant -- and until phase 7 resolveScope did not, because it only matched labels literally: all eight documents entered and each posting got the broad budget. It now matches the role title too, and resolves to Job #1, #4 and #5 -- three rather than one, because the title AI Engineer is a substring of Agentic AI Engineer. The clean gap is browser automation, which Job #4 asks for and the resume never mentions.\n\nThe mustNot records what the first run did. It named browser automation correctly and then listed the degree as a fourth gap, \"as no degree is stated in your resume\" -- while the resume states a Bachelor's in Computer Engineering from PUCP in a section the budget did not retrieve. The claim is true of the excerpts and false of the document, and a reader has no way to tell those apart. It is the one failure mode a whole-corpus prompt cannot have, and it is the price of filtering: absence of evidence reads as evidence of absence when the evidence was merely not selected."
   },
   {
     "id": "title-afficiency",
     "q": "how much does the Afficiency role pay?",
     "class": "answerable",
     "recorded": 0.3048,
-    "scope": [],
+    "scope": ["Job #3"],
     "refuse": false,
     "evidence": ["Job #3 — AI Prompt Engineer / AI Application Engineer"],
     "coverage": ["Job #3"],
     "must": ["100", "120"],
-    "why": "Identifies the posting by company rather than by title or label. Afficiency appears only in Job #3's Company Description, while the pay line (USD 100,000-120,000 / year) is in the title section instead -- so the question matches one section and the answer lives in another, with six irrelevant postings holding budget in between. pay-job2 is the scoped twin of this question and answers it from four sections; this one has to do it from three."
+    "why": "Identifies the posting by company rather than by title or label. Afficiency appears only in Job #3's Company Description, while the pay line (USD 100,000-120,000 / year) is in the title section instead -- so the question matches one section and the answer lives in another. Six irrelevant postings held budget in between until phase 7 taught resolveScope the company name; it is now the cheapest question in the set at 8 sections. pay-job2 is the scoped twin of this question and answers it from four sections; this one has to do it from three."
   },
   {
     "id": "title-ambiguous",
     "q": "what does the AI engineer role require?",
     "class": "answerable",
     "recorded": 0.2795,
-    "scope": [],
+    "scope": ["Job #1", "Job #5"],
     "refuse": false,
     "evidence": ["Job #5 — REQUIREMENTS", "Job #1 — WHAT YOU'LL BRING"],
     "coverage": ["Job #1", "Job #5"],
@@ -516,7 +516,7 @@
     "class": "answerable",
     "recorded": 0.3144,
     "twinOf": "missing-job3",
-    "scope": [],
+    "scope": ["Job #3"],
     "refuse": false,
     "evidence": [
       "Job #3 — TECHNICAL SKILLS / EXPOSURE",
@@ -525,7 +525,7 @@
     ],
     "coverage": ["Job #3", "My resume"],
     "anyOf": ["Flask", "Copilot Studio", "Azure DevOps", "Oracle", "insurance", "4\\+ years"],
-    "why": "Word for word `missing-job3` with the company name in place of the label. Nobody outside this repo types \"Job #3\", so this is the phrasing the product actually receives, and the pair exists to price what that costs: same information need, same expectation, and the only variable is whether `resolveScope` finds a literal match. It does not, so the field goes from two documents to eight."
+    "why": "Word for word `missing-job3` with the company name in place of the label. Nobody outside this repo types \"Job #3\", so this is the phrasing the product actually receives, and the pair exists to price what that costs: same information need, same expectation, and the only variable is whether `resolveScope` finds a match. Before phase 7 it did not and the field went from two documents to eight; it now resolves to Job #3 exactly, and what is left of the gap is which sections of Job #3 win, not how many documents are in play."
   },
   {
     "id": "twin-interview-afficiency",
@@ -533,7 +533,7 @@
     "class": "answerable",
     "recorded": 0.3124,
     "twinOf": "interview-prep-job3",
-    "scope": [],
+    "scope": ["Job #3"],
     "refuse": false,
     "evidence": ["Job #3 — TECHNICAL SKILLS / EXPOSURE", "My resume — TECHNICAL SKILLS"],
     "coverage": ["Job #3", "My resume"],
@@ -547,13 +547,13 @@
     "class": "answerable",
     "recorded": 0.3000,
     "twinOf": "interview-prep-job6",
-    "scope": [],
+    "scope": ["Job #6"],
     "refuse": false,
     "evidence": ["Job #6 — What You Bring"],
     "coverage": ["Job #6", "My resume"],
     "anyOf": ["LangGraph", "AutoGen", "vector database", "Kubernetes", "MLOps", "agent"],
     "mustNot": ["STAR method", "behavio(u)?ral question", "mock interview"],
-    "why": "The twin of `interview-prep-job6`, naming the role by its title. Forward Deployed Engineer belongs to no other posting, so a reader knows exactly which one is meant and the retriever does not."
+    "why": "The twin of `interview-prep-job6`, naming the role by its title. Forward Deployed Engineer belongs to no other posting, so a reader knows exactly which one is meant -- and since phase 7 so does the retriever. It still misses `What You Bring`, now for ordering reasons alone: same scope as its twin, different wording, different sections."
   },
   {
     "id": "twin-story-kargo",
@@ -561,12 +561,12 @@
     "class": "answerable",
     "recorded": 0.3068,
     "twinOf": "interview-story-job4",
-    "scope": [],
+    "scope": ["Job #4"],
     "refuse": false,
     "evidence": ["Job #4 — EXPERIENCE"],
     "coverage": ["Job #4", "My resume"],
     "anyOf": ["RedMuqui", "WORLDCOB", "Ramón", "PXL", "PROTECSO", "choropleth", "n8n", "CRM"],
-    "why": "The twin of `interview-story-job4`. This pair is the interesting one for the resume allowance: scoped, the resume competes with one posting, and by company name it competes with seven, while the answer needs the resume's experience entries either way."
+    "why": "The twin of `interview-story-job4`. This pair is the interesting one for the resume allowance: scoped, the resume competes with one posting, and by company name it competed with seven until phase 7 resolved Kargo to Job #4. That narrowing is what recovered `Job #4 — EXPERIENCE`, the one section the change added to the whole set."
   },
   {
     "id": "twin-align-golden",
@@ -574,12 +574,12 @@
     "class": "answerable",
     "recorded": 0.2825,
     "twinOf": "align-job5",
-    "scope": [],
+    "scope": ["Job #5"],
     "refuse": false,
     "evidence": ["Job #5 — REQUIREMENTS", "My resume — TECHNICAL SKILLS"],
     "coverage": ["Job #5", "My resume"],
     "anyOf": ["React", "TypeScript", "Postgres", "Supabase", "Vercel", "Vite"],
-    "why": "The twin of `align-job5`. Golden Analytics is named only in Job #5's title section and its ABOUT GOLDEN ANALYTICS section, so the company name matches text in one document out of eight — the search knows which posting is meant and the budget has no way to act on it."
+    "why": "The twin of `align-job5`. Golden Analytics is named only in Job #5's title section and its ABOUT GOLDEN ANALYTICS section, so the company name matches text in one document out of eight. The search always knew which posting was meant; since phase 7 the budget acts on it too, and the remaining miss is that naming the company pulls ABOUT GOLDEN ANALYTICS into the budget ahead of REQUIREMENTS."
   },
   {
     "id": "twin-fit-ecommerce",
@@ -587,11 +587,11 @@
     "class": "answerable",
     "recorded": 0.2348,
     "twinOf": "fit-job7",
-    "scope": [],
+    "scope": ["Job #7"],
     "refuse": false,
     "evidence": ["Job #7 — REQUIRED EXPERIENCE", "My resume — TECHNICAL SKILLS"],
     "coverage": ["Job #7", "My resume"],
     "anyOf": ["CheckoutChamp", "Shopify", "e-commerce", "ecommerce", "funnel"],
-    "why": "The twin of `fit-job7`, and the pair where the widened field should hurt most. The scoped version already fails to retrieve `Job #7 — REQUIRED EXPERIENCE` at rank 8 of 11 with a budget of 4; unscoped the budget drops to 3, so the same section has to climb higher from further back."
+    "why": "The twin of `fit-job7`, and the pair where the widened field should hurt most. The scoped version already fails to retrieve `Job #7 — REQUIRED EXPERIENCE` at rank 8 of 11 with a budget of 4; unscoped the budget dropped to 3, so the same section had to climb higher from further back. It is the counter-example: naming the title retrieves REQUIRED EXPERIENCE where naming the label does not, because the title is the vocabulary of that section."
   }
 ]

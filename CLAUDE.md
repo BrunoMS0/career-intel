@@ -38,7 +38,13 @@ https://github.com/BrunoMS0/career-intel
 - `lib/chunk.ts` — heuristic chunker for plain text, plus `splitBySize()`,
   `enrich()` and `unlabeledShare()`, which the markdown path reuses
 - `lib/embedding.ts` — `embedForIndex()` / `embedForQuery()`, deliberately paired
-- `lib/retrieval.ts` — scope resolution and the search + parent-expansion query
+- `lib/retrieval.ts` — the search + parent-expansion query, and the one query
+  that feeds scope resolution
+- `lib/scope.ts` — which documents a question names, by label, company or role
+  title. Free of db imports for the same reason `lib/guardrail.ts` is: it is the
+  rule that decides how wide the search gets and `pnpm test` has to reach it
+- `db/identities.sql` — the eight companies and role titles, applied by hand.
+  Re-run it after re-ingesting; nothing detects that it was not
 - `lib/guardrail.ts` — the 0.40 threshold and the refusal text, kept free of db
   imports so the deterministic suite can test it with injected distances
 - `lib/ingest.ts` — parse, chunk, embed, store in one transaction
@@ -327,7 +333,9 @@ shape -- one opening sentence and at most four bullets cannot carry six postings
 - `db/schema.sql` only runs when the volume is created. Schema changes need
   `docker compose down -v && docker compose up -d`, which also throws the corpus
   away — `query_logs` was added to the file and applied to the running database
-  by hand to keep the indexed documents.
+  by hand to keep the indexed documents. `documents.company` and
+  `documents.role_title` went in the same way; `db/identities.sql` holds both the
+  `alter table` and the eight values, and is idempotent so it can just be re-run.
 - The Gemini free tier answers 503 "high demand" and then 429 under a handful of
   requests in a row. Retries look like an app bug and are not one; check
   `statusCode` in the dev server log before debugging the route.
@@ -532,6 +540,10 @@ Every one of these, every time, and nothing detects most of it:
 
 - `eval/distances.json` — guarded, refuses to run when the chunk count moves.
 - `eval/answers.json` — not guarded. Delete it by hand.
+- **`db/identities.sql`.** Ingest does not write `company` or `role_title`, so a
+  re-ingested posting comes back with a null identity and silently answers only
+  to `Job #N` again — every question naming it by company widens to eight
+  documents and nothing fails. Re-run the file.
 - The section names in all 31 expectations in `eval/questions.json`, which are
   matched literally.
 - The `recorded` baseline on each question, which is what the drift check reads.
@@ -818,9 +830,11 @@ seven postings whether or not they have anything to do with it.
    can be relevant and go uncited because the answer format allows one sentence
    and four bullets. For a budget decision utilisation is the right question.
 
-**The precision problem is one thing, and it is not chunking or budget — it is
-`resolveScope` matching labels literally.** Precision split by how a question
-names its target, over the answerable questions only:
+**The precision problem is one thing, and it is not chunking or budget — it was
+`resolveScope` matching labels literally.** Fixed, and the fix is written up at
+the end of this section with its numbers; the diagnosis below is what it was
+fixed on. Precision split by how a question names its target, over the
+answerable questions only:
 
 ```
 grupo                     n   secciones  prec.doc   prec.seccion   contexto
@@ -878,18 +892,29 @@ All six broad questions correctly stay broad — `remote-jobs`, `good-fit`,
 is the control that had to hold. `title-ambiguous` resolves to exactly Job #1
 and Job #5, which is the right answer for a title two postings share.
 
-**This reorders the plan.** Phase 8 is written below as the last thing to do,
-because relabelling breaks `resolveScope` and several checks. On these numbers
-it is the largest single lever measured — larger than the reranker, which buys
-recall and no precision at all because it reorders inside the same budget. The
-two are complementary, not competing.
+**This reordered the plan, and the reordered version is what shipped.** On these
+numbers it was the largest single lever measured — larger than the reranker,
+which buys recall and no precision at all because it reorders inside the same
+budget. The two are complementary, not competing, and this one went first so the
+reranker gets handed 8 sections from 2 documents rather than 25 from 8. It is
+applied and remeasured further down, under "Done: scope resolves by company and
+role title"; the simulation's section count and recall reproduced exactly.
 
-**And phase 8 as written would make things worse on its own.** `resolveScope`
-tests `asked.includes(squash(label))`: the *whole* label has to appear in the
-question. With the label `Job #3` a user typing "Job #3" matches. With the label
-`Afficiency — AI Prompt Engineer` a user typing "the Afficiency role" matches
-nothing, so every question would widen and the 11 scoped questions would join
-the bad row. Relabelling and part-matching have to land together or not at all.
+**What it did not need was phase 8.** The simulation was written as "real labels
+plus part matching", and half of that turned out to be unnecessary. Identity
+went into two new columns instead of into `documents.label`, so the label stays
+`Job #N`, `enrich()` is untouched, nothing was re-embedded and neither cache was
+invalidated. Renaming the label would have done all of that for no additional
+retrieval gain.
+
+The observation that made the original plan dangerous still stands and is why it
+was not done that way. `resolveScope` tested `asked.includes(squash(label))`:
+the *whole* label had to appear in the question. With the label `Job #3` a user
+typing "Job #3" matches; with the label `Afficiency — AI Prompt Engineer` a user
+typing "the Afficiency role" matches nothing, so every question would have
+widened and the 11 scoped questions would have joined the bad row. Relabelling
+and part-matching had to land together — or, as it turned out, relabelling did
+not have to land at all.
 
 What the simulation does *not* fix: `redmuqui`, `summarize` and `align-worldcob`
 stay at 24 sections and ~16%, because they are about the resume and no posting
@@ -1019,6 +1044,104 @@ top-12 net.
    `compare-all` and `roles-common` need *every* posting, so whatever rule is
    tried has to keep them whole. That is the real constraint.
 
+**Done: scope resolves by company and role title, and it delivered what the
+simulation promised.** `documents` gained two nullable columns, `company` and
+`role_title`, filled in by hand from `db/identities.sql`; `lib/scope.ts` splits
+each identity into parts and matches any part of five characters or more inside
+the question. The label is still `Job #N` and still matches exactly as before,
+so nothing was re-embedded and neither cache was invalidated -- this is the
+cheap half of what phase 8 was going to do, without the half that breaks things.
+
+Over the 12 answerable questions that name a posting by title or company:
+
+```
+                  secciones   prec.doc   recall     contexto/pregunta
+before               295        20.8%     13/19      15,811 ch
+after                154        67.0%     14/19       7,617 ch
+simulated            154        51.3%     14/19          --
+```
+
+Sections and recall land on the simulation exactly. Precision reads higher than
+the simulation predicted because that figure was computed by hand with a
+slightly different denominator -- recomputed with one script over both snapshots
+the before is 20.8% rather than the 23.7% written above, so the delta is what to
+trust, not either endpoint. Over all 29 answerable questions: 530 sections to
+389, 62.5% to 81.6% document precision, 11,786 to 8,395 characters at the mean.
+
+Section-level precision, measured the same way as before -- what the generator
+actually cited over the three cached runs, against what is now sent -- goes
+**22.8% to 30.3% micro, 26.6% to 32.3% macro**. Half of that is arithmetic
+(fewer sections sent, same citations) and it is an estimate on the after side:
+the model was not rerun, so it counts sections that were ever useful rather than
+what a fresh run would cite.
+
+**Everything the step was made falsifiable on held.**
+
+- The four ordering failures survive intact: `Job #7 — REQUIRED EXPERIENCE`,
+  `Job #3 — QUALIFICATIONS`, Job #2's header, `My resume — TECHNICAL SKILLS`.
+  None of them was a scope problem, so the diagnosis that they are ordering
+  stands and the reranker still has its case.
+- The six broad questions stay broad. `remote-jobs`, `good-fit`, `compare-all`,
+  `roles-common`, `best-fit` and `learn-next` resolve to nothing, which is what
+  a rule matching company names could most easily have broken.
+- No question lost evidence. The whole +1 is `twin-story-kargo` recovering
+  `Job #4 — EXPERIENCE` -- narrowing to Job #4 raised its budget from 3 to 4.
+- Guardrail 44/44, band still 0.3705 to 0.4040, drift 0.0000. One baseline moved
+  and was rewritten: `title-agentic` went 0.2651 to 0.2749, because its nearest
+  chunk had been in a document the question no longer pulls.
+
+**The residual is now measurable in a way it was not before, and it is entirely
+ordering.** All six twin pairs resolve to the *same single posting* as their
+labelled versions, and still retrieve different sections, because the wording
+differs and the wording is what gets embedded. The twins recover 6/11 expected
+sections against the labelled 8/11 with an identical field.
+
+The mechanism is legible in the diff, and it is one thing: naming the company or
+the title pulls the sections that *contain* that name into the budget.
+
+```
+twin-missing-afficiency   gains COMPANY DESCRIPTION and the title section,
+                          loses TECHNICAL SKILLS / EXPOSURE
+twin-align-golden         gains ABOUT GOLDEN ANALYTICS and the title section,
+                          loses REQUIREMENTS
+twin-interview-fde        gains the title section and Your Mission,
+                          loses What You Bring
+```
+
+Which is the same failure the location line demonstrated earlier: the embedding
+is right about what a passage is *about* and blind to which passage *answers*.
+"Afficiency" really is what `COMPANY DESCRIPTION` is about. A cross-encoder is
+what separates those, and it now gets handed 8 sections from 2 documents instead
+of 25 from 8 -- which is why this went first.
+
+One counter-example, unchanged from when it was first noticed:
+`twin-fit-ecommerce` retrieves `Job #7 — REQUIRED EXPERIENCE` where its labelled
+twin does not, because "Senior E-Commerce Developer" is that section's
+vocabulary. Naming a posting by its title is not uniformly worse at finding
+things -- it was uniformly worse at paying for them, and that is the part that
+is fixed.
+
+**What it does not fix**, as predicted: `redmuqui`, `summarize` and
+`align-worldcob` still draw all eight documents at ~25 sections, because they
+are about the resume and name no posting. Narrowing on the *absence* of a
+posting signal is a different rule and was not attempted.
+
+**And two things it bought that were not the point.** `title-agentic` resolves
+to Job #1, #4 and #5 rather than Job #4 alone, because "AI Engineer" is a
+substring of "Agentic AI Engineer" -- three documents instead of eight is still
+the win, and the fix if it matters is word-boundary matching, not a different
+rule. And "eJam" is four characters, so Job #2 cannot be resolved by company at
+all: the five-character floor exists because "ejam" sits inside ordinary Spanish
+words like "dejamos", and the honest price of that floor is one posting.
+
+**The eval harness stopped caching scope.** `distances.json` still holds one
+scope per question, but it is now rewritten on every run instead of only when a
+question is measured. Caching it is precisely how a change to `resolveScope`
+would be measured stale -- the numbers still parse, they just describe the rule
+that used to run. The MIRROR check also gained a third question,
+`title-afficiency`, so the offline replay is verified against the real SQL on
+the identity path and not only on the label one.
+
 ### Open, in order, with what is already known about each
 
 Three things were designed and measured but not applied. Each has its evidence
@@ -1054,16 +1177,20 @@ above; this is only the shortlist.
    so Gemini never saw it. Either the excerpt count was never the cause, or
    Gemma is more prone to it. Three calls separate the two.
 
-### Phase 8 — real labels, then the UI
+### Phase 8 — the UI
 
-"Job #1" is not a name anyone would type, and `resolveScope` matches labels
-literally, so every question that names a role by title or company widens to the
-whole corpus. Real labels ("Gamma — AI Engineer") make literal matching hit far
-more often for free. It goes last because it breaks `resolveScope`, the scope
-expectations, and the several checks that assert on "Job #N".
+Real labels were the whole of this phase and there is nothing retrieval-shaped
+left in it. "Job #1" is still not a name anyone would type, but phase 7 made that
+a display question rather than a retrieval one: `documents.company` and
+`documents.role_title` carry the real identity, `resolveScope` matches them, and
+the label stayed `Job #N` precisely so `enrich()`, both caches and every check
+that asserts on "Job #N" kept working. Showing the real name in the UI and in
+citations is now a rename with no measurement behind it — and it would still
+invalidate `eval/answers.json`, since the citation contract prints the label.
 
-Then the UI polish and the app Dockerfile that were always phase 6, plus the
-markdown rendering the answers still do not do.
+What is left: the UI polish and the app Dockerfile that were always phase 6, the
+markdown rendering the answers still do not do, and an upload form that can set
+company and role title so a ninth document does not arrive identity-less.
 
 Known and deliberate, not yet fixed:
 
@@ -1079,6 +1206,12 @@ Known and deliberate, not yet fixed:
   nothing else — gets 4 of the resume's 10 sections and never sees three of the
   six employers it is being asked to summarise.
 - `documents.content` is stored and read by nothing yet.
+- Ingest does not fill in `company` or `role_title`, and the upload form cannot
+  set them. Five postings state `**Company:**` in their first section, Job #6
+  states it three sections later and Job #7 never states it, so the extraction
+  rule would be three rules and a fallback for eight rows. A ninth document
+  therefore answers only to its label until `db/identities.sql` is edited and
+  re-run, and nothing warns that it does not.
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text. The guardrail inherits this:
   a follow-up is assessed on the wrong question's distances.
