@@ -644,14 +644,15 @@ Every figure this harness had ever reported came from one sample. Three samples
 of each of the 23 questions that reach the model settle what that was worth:
 
 ```
-run 1   29/31
-run 2   29/31
-run 3   30/31
-        21 of 23 repeated questions landed the same way all three times
+                31 questions      38 questions
+run 1              29/31             35/38
+run 2              29/31             36/38
+run 3              30/31             37/38
+stable          21 of 23          27 of 30
 ```
 
-So the system is mostly stable and the headline is **29 to 30 of 31**. The two
-that are not stable are the two failures, and they fail differently:
+So the system is mostly stable and the headline is **35 to 37 of 38**. The ones
+that are not stable are the failures themselves, and they fail differently:
 
 - `summarize` fails **3 of 3**. That is a systematic result, not noise, which
   strengthens rather than weakens the reading below that the check is the thing
@@ -671,6 +672,55 @@ reproducible, so the eval was not measuring noise, it was quoting a range as a
 point. Repeat the deciding questions before writing a number down; the run order
 already puts the previous pass's failures first, so a truncated repeat still
 prices what a conclusion rests on.
+
+**The question set was covering the assignment on paper and not in fact.** The
+assignment names four things the product should answer: fit, skill gaps,
+experience alignment and interview preparation. Mapped against the 31 questions,
+skill gaps had 5, fit had 3, alignment had 2 — and interview preparation had two
+questions neither of which produces an answer: `interview-job3`, where Job #3
+does not describe its process, and `system-design-prep`, which the threshold
+refuses because the corpus does not discuss system design. The category was
+nominally covered and actually empty, and nothing in the harness could say so
+because coverage of the *assignment* was never a thing it measured.
+
+Seven questions were added: three interview-prep grounded in a named posting
+(preparing for a role is a skill gap wearing an interview hat, and the corpus
+holds both sides), two alignment, two fit — one against Job #7, the posting the
+candidate matches worst, and one phrased in the negative because every other fit
+question is worded so that agreeing is the easy answer.
+
+**They found three retrieval misses the old set could not see**, and evidence
+recall went 20/24 to 28/35 — 8 of 11 new sections arrive. The worst is
+`fit-job7`: asked whether the candidate qualifies for Job #7, retrieval does not
+return `Job #7 — REQUIRED EXPERIENCE`, the section that lists what the job
+requires. It ranks 8th of 11 at 0.2855 against a budget of 4, and ranks 4
+through 9 span 0.0047 — they are tied, and which ones survive the cut is
+arbitrary. That is the cleanest argument for a reranker in the file: a
+bi-encoder embeds the question and the passage separately and cannot tell which
+of seven sections *about* the job actually answers it.
+
+The new questions cost nothing at the guardrail: all seven land between 0.2444
+and 0.3406, well inside the answerable range, so the band is still 0.3705 to
+0.4040 and 0.387 still separates 38 of 38.
+
+**An invented citation appeared in the filtered variant, which phase 5 said was
+the one thing it could not do.** `fit-underqualified-job6` cites `Job #6 —
+Requirements` four times. That section does not exist; the section it was shown
+is `Job #6 — What You Bring`, and `Required` is a sub-heading inside its text.
+So the model named a section after a heading in the body — which is exactly the
+pattern phase 5 measured in the whole-corpus variant and attributed to scale,
+"given 64 labelled excerpts the model stops tracking labels and starts naming a
+section after what the text is about". This answer had **seven** excerpts. So
+the failure is not a function of how many labels are in the prompt, and
+"filtering cannot produce an invented citation" was a claim about one model, not
+about filtering.
+
+Read rather than scored, the same answer has a second problem the check does not
+catch: asked whether the candidate is underqualified it answers "Yes" and lists
+four gaps and zero matches, never mentioning that the 3+ years bar and the agent
+experience are met. The question was written to catch a model that picks
+whichever side the framing suggests, and it caught one — with prose, not with a
+regex.
 
 **Two checks were wrong before the answers were, again.** Both were found by
 reading the failures rather than by the score, which is the only way this
