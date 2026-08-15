@@ -104,7 +104,7 @@ boundary, so there is no mid-thought break to repair.
 **No vector index.** Under a hundred chunks scan in well under a millisecond.
 Add HNSW past a few thousand rows.
 
-**The score threshold is absolute after all, at 0.40 — the relative one was
+**The score threshold is absolute after all, at 0.387 — the relative one was
 measured and does not work.** This entry used to say the opposite, on the
 evidence of two questions: "what skills am I missing for Job #3?" best-hits at
 0.2441 and "which role fits me best?" at 0.3556, both answerable, so a fixed
@@ -112,30 +112,40 @@ cutoff at 0.30 answers one and refuses the other. That much is still true. The
 generalisation drawn from it — that the cutoff must therefore be relative to the
 query's own best hit — is what 28 questions disproved.
 
-13 answerable questions and 15 out-of-domain ones were run against the corpus.
-The answerable ones best-hit between 0.2431 and **0.3640**; the vaguest of them
-("compare all the postings for me") sets that ceiling. Off-topic questions start
-at **0.4048**. The band between is empty and 0.40 sits inside it, refusing none
-of the good questions.
+**The constant is fitted per corpus, and phase 6 refitted it.** On the
+eight-document corpus all 31 questions were remeasured. The highest that must
+pass is the injection at **0.3705**, which clears on purpose so the prompt gets
+to decline it; the highest with a real answer is "compare all the postings for
+me" at **0.3589**. The nearest that must refuse is "how should I prepare for a
+system design interview?" at **0.4040**. Nothing lands between 0.3705 and
+0.4040, and 0.387 is the middle of that empty band.
 
-Phase 5 corrected one detail of that sentence: the band is narrower than it
-looks and 0.40 is not in its middle. The highest question that *passes* is not
-the answerable ceiling but the injection at **0.3705**, which clears the
-threshold by design, so the empty band runs 0.3705 to 0.4048 and 0.40 sits
-0.0048 under the ceiling and 0.0295 over the floor. The asymmetry happens to be
-the right way round -- wide margin against the false refusal, which is the
-expensive failure -- but it is thinner against a false answer than the original
-wording suggests. `pnpm eval` re-checks all 28 sides on every run.
+The old 0.40 still separates all 31 correctly — the band barely moved, 0.3705 to
+0.4048 before against 0.3705 to 0.4040 now — so this change alters no outcome on
+the question set. What it changes is the margin. 0.40 sat **0.0040** under the
+refusing floor, and a single corpus edit has already moved that same question
+0.0063 (0.4048 → 0.3985): the constant was one heading rewrite away from
+answering a question it exists to refuse, and nothing would have failed loudly.
+0.387 is 0.0165 from the nearest question on the passing side and 0.0170 from
+the nearest on the refusing side.
 
-The relative statistic loses on its own terms. Margin (median distance minus
-best hit) runs 0.0310–0.1572 over the good questions and 0.0270–0.1177 over the
-bad ones — overlapping almost exactly. "Give me a recipe for pasta carbonara"
-has margin 0.0270, *tighter* than 12 of the 13 good questions, so a margin
-cutoff calls carbonara confident and "what do all these roles have in common?"
-(0.0310) weak. And the 4th largest margin of all 28 belongs to an unanswerable
-question, "when does Job #2 want someone to start?" (0.1177): the Job #2
-overview stands out because it looks like it is about starting, and it still
-contains no date.
+The asymmetry the old value bought is not lost, because the two sides do not
+cost the same. A false refusal is the expensive failure, and the nearest
+question that would suffer one is 0.0281 away (compare-all); the nearest false
+answer is 0.0170 away. The wider margin still faces the expensive side.
+
+The relative statistic loses on its own terms, and it lost again on the new
+corpus without being asked to. Margin (median distance minus best hit) runs
+0.0291–0.1588 over the answerable questions and 0.0294–0.1234 over everything
+else — overlapping almost exactly, as before. "Give me a recipe for pasta
+carbonara" has margin 0.0340, *looser* than three answerable questions, so any
+margin cutoff that refuses carbonara also refuses "am I a good fit for any of
+these?" (0.0291), "what do all these roles have in common?" (0.0292) and "which
+role fits me best?" (0.0317). And the 4th largest margin of all 31 still belongs
+to an unanswerable question, "when does Job #2 want someone to start?" (0.1234,
+up from 0.1177 and holding the same rank across a full corpus replacement): the
+Job #2 title section stands out because it looks like it is about starting, and
+it still contains no date.
 
 The reason is that a broad-but-valid question and an off-topic one produce the
 same *shape* — flat. One is flat because everything matches a little, the other
@@ -144,37 +154,39 @@ because nothing matches at all. Only the *level* tells them apart.
 **What no threshold catches, and why it is the prompt's job.** A question about
 a real document whose answer that document does not contain is indistinguishable
 from a good one by distance. "What is the dress code at Job #1?" best-hits at
-0.3653, inside the good range, because the embedding measures what a question is
-*about* and that question really is about Job #1. Absence of an answer is not a
-geometric property. Measured against the tightest available signal too: the
-spread inside the scoped document does rank these nearly right (dress code
-0.0186, hiring manager 0.0516, versus 0.0844–0.0963 for good scoped questions),
-but "how much does Job #2 pay?" lands at 0.0583, under three unanswerable ones.
-A cutoff that catches them refuses a question whose answer is in the document,
-and a false refusal is the expensive failure. So the spread is logged in
-`query_logs.doc_spread` and not enforced; phase 5 has the data to revisit it.
+0.3584, inside the good range — and on this corpus 0.0005 *under* the answerable
+ceiling rather than above it, an ordering that flipped on a reindex — because
+the embedding measures what a question is *about* and that question really is
+about Job #1. Absence of an answer is not a geometric property. Measured against
+the tightest available signal too: the spread inside the scoped document does
+rank these nearly right (dress code 0.0296, hiring manager 0.0505, versus
+0.0787–0.0909 for good scoped questions), but "how much does Job #2 pay?" lands
+at 0.0551, under three unanswerable ones. A cutoff that catches them refuses a
+question whose answer is in the document, and a false refusal is the expensive
+failure. So the spread is logged in `query_logs.doc_spread` and not enforced.
 
 `pnpm retrieve --chunks` prints the numbers to check any of this against.
 
-**The document spread does not earn a threshold either — measured, phase 5.**
-The idea was that a document with no answer scores all its chunks equally badly
-and therefore goes flat, while one holding the answer separates. Sorting the 20
-questions that clear 0.40 by their spread mixes them: the flattest is indeed
-unanswerable (dress code, 0.0186) but the second flattest is a perfectly good
-question ("what do all these roles have in common?", 0.0231). A cutoff refusing
-nothing good catches 1 of 6 unanswerable; catching all 6 needs 0.0903, which
-refuses 9 of the 13 good ones. Restricted to scoped questions, where one
+**The document spread does not earn a threshold either — measured, phase 5, and
+it lost again on the phase 6 corpus without the numbers being nudged.** The idea
+was that a document with no answer scores all its chunks equally badly and
+therefore goes flat, while one holding the answer separates. Sorting the 23
+questions that clear the threshold by their spread mixes them: the flattest is
+indeed unanswerable (dress code, 0.0296) but the second flattest is a perfectly
+good question ("am I a good fit for any of these?", 0.0299). A cutoff refusing
+nothing good catches 1 of 6 unanswerable; catching all 6 needs 0.0791, which
+refuses 7 of the 16 good ones. Restricted to scoped questions, where one
 document dominates and the statistic is cleanest, it is 5 against 5: a free
-cutoff catches 2, and catching all 5 costs "how much does Job #2 pay?", whose
+cutoff catches 3, and catching all 5 costs "how much does Job #2 pay?", whose
 answer is in the document.
 
 Same failure as the margin, for the same reason: a broad valid question is flat
 because everything matches a little and an unanswerable one is flat because
-nothing matches at all. And even the free 2 are already handled — they are the
-dress code and the hiring manager, which the prompt refuses correctly. A second
-rule there would cover 2 of the 6 cases the prompt covers, and add a second
-place where a valid question can be refused by mistake. It stays in
-`query_logs.doc_spread` as data and enforces nothing.
+nothing matches at all. And even the free ones are already handled — scoped,
+they are the dress code, the start date and the hiring manager, all of which the
+prompt refuses correctly. A second rule there would cover 3 of the 6 cases the
+prompt covers, and add a second place where a valid question can be refused by
+mistake. It stays in `query_logs.doc_spread` as data and enforces nothing.
 
 **Chunks per document stay a count, not a band — measured, phase 5.** The open
 question from phase 4 was whether keeping every chunk within some distance of
@@ -525,24 +537,77 @@ Every one of these, every time, and nothing detects most of it:
 - **`WEAK_DISTANCE`.** Improving the postings' headers moved 21 of 24 questions
   closer and pushed "how should I prepare for a system design interview?" from
   0.4048 to 0.3985 — under the threshold, answered instead of refused. The
-  constant is fitted to a corpus and has to be refitted with it. On that corpus
-  the correct value was 0.38; on the markdown one it is unmeasured.
+  constant is fitted to a corpus and has to be refitted with it. Phase 6 did
+  that: 0.387 on the eight-document corpus, from a band of 0.3705 to 0.4040.
+  The refit procedure is three numbers — the highest question that must pass,
+  the highest with a real answer, the lowest that must refuse — and `pnpm eval`
+  prints all three on every run under GUARDRAIL.
 
 ### Phase 6 — a baseline on the corpus that now exists
 
-Nothing here is a design decision; all of it is bookkeeping the corpus change
-forced, and it has to happen before anything is tuned against numbers that no
-longer describe the index.
+Both caches were deleted, all 31 expectations rewritten to the new section
+names, every `recorded` value remeasured, and `WEAK_DISTANCE` refitted from 0.40
+to **0.387** — the refit is written up with its numbers under the threshold
+entry above. The corpus is 8 documents, 72 chunks, 70 sections, 39,336
+characters.
 
-Delete both caches, rewrite the 31 expectations to the new section names, remeasure
-each question's `recorded` value, and refit `WEAK_DISTANCE`. Then run both
-halves and write down what the corpus scores now.
+**The retrieval half is done and this is what it scores**, against the last
+comparable measurement in brackets:
 
-Two traps. Seven section names contain an em-dash or a pipe of their own
-(`Data Analytics | March 2026 – Present`, `AI Engineer — Core AI Systems`);
-evidence keys compare whole strings so they work, but anything that splits on
-`" — "` breaks. And `remote-jobs` and the other breadth questions now have seven
-postings to cover rather than six, so their expectations grow.
+```
+                        phase 6        phase 5 corpus
+drift                   0.0000         0.0000
+guardrail               31/31          28/28
+evidence recall         20/24          19/24
+coverage                complete       complete
+context, median         13,860 ch      7,400 ch
+```
+
+Evidence improved by one and the misses moved. `llm-rag-job4` now gets the
+resume's skills list, which it used to lose. What still misses is the same
+*kind* of failure the reranker entry describes — ordering, not budget:
+`Job #3 — QUALIFICATIONS` (twice, English and Spanish) ranks outside Job #3's
+top 3, and for `remote-jobs` the headers of Job #2 and Job #3 rank 4th and 5th
+inside their own documents, behind `BENEFITS` and `REQUIREMENTS`. The section
+holding `Location:` loses to the section that mentions work-from-home equipment.
+
+The context median nearly doubled and that is arithmetic, not a regression: an
+unscoped question now draws from eight documents instead of seven, over a corpus
+13% larger, with fewer and bigger sections after the agentic parse. It is also
+the number phase 7 exists to attack.
+
+Two things the corpus change did *not* break, worth knowing because both were
+predicted to: every relative statistic lost again, on numbers nobody tuned. The
+margin overlap and the spread overlap both reproduce, with different questions
+occupying the same positions. And the injection lands at 0.3705 on both
+corpora, to four decimals.
+
+**The answers half is partial: 16 of 31 cached, 14 clean.** The free tier is 20
+model calls a day per project and this pass needs 23; the 8 refusals are free
+and 8 of the 15 model calls are spent. `pnpm answers` resumes from the cache.
+What the 16 show so far: all 8 refusals correct, both injection cases held, all
+absent questions admitted, no invented citations. Two failures, both known:
+
+- `remote-jobs` names 4 postings of 7, worse than the 4 of 6 phase 5 recorded,
+  and for three separate reasons now. Job #2's and Job #3's headers never
+  reached the context (retrieval). Job #5's header *did* and was dropped anyway
+  (answer shape — one sentence and four bullets cannot carry seven postings).
+  Job #7 states no location anywhere in five pages, so there is nothing to
+  retrieve and a complete answer has to say so. It said nothing about it.
+- `summarize` fails a check, not an answer. The reply cites four resume sections
+  correctly and summarises by capability rather than by employer, and the
+  `anyOf` demands an employer name. Worth reading before deciding: the old
+  resume's summary section named employers and the new one-page version does
+  not, so the check was a proxy that the rewrite broke. It also exposes the
+  resume allowance — only 4 of the resume's 10 sections reached the prompt, so
+  three of the six employers were never shown at all. That is the unmeasured
+  knob listed at the bottom of this file, with its first piece of evidence.
+
+The two traps in the plan were real and neither bit. Seven section names carry
+an em-dash or a pipe of their own (`My resume — Fullstack Engineer | November
+2025 – April 2026`, `Job #1 — AI Engineer — Core AI Systems`); every key
+compares whole strings and the citation check squashes punctuation, so both
+pass. The breadth questions grew to seven postings and coverage still holds.
 
 ### Phase 7 — precision
 
@@ -588,9 +653,10 @@ Known and deliberate, not yet fixed:
   rescues.
 - The resume's allowance is fixed at 4 whatever the question, and that is the
   one budget knob nobody has measured. Evidence points both ways: in
-  `llm-rag-job4` its skills list ranks 6th and misses the cut by two places,
-  while in `remote-jobs` it takes 4 of the 22 slots and its best chunk is
-  further away than everything the postings contributed.
+  `remote-jobs` it takes 4 of the 25 slots and its best chunk is further away
+  than everything the postings contributed, while `summarize` — a question about
+  nothing else — gets 4 of the resume's 10 sections and never sees three of the
+  six employers it is being asked to summarise.
 - `documents.content` is stored and read by nothing yet.
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text. The guardrail inherits this:
