@@ -34,17 +34,24 @@ export type RetrievedSection = {
  * corpus, "which role fits me best?" went from 8 sections drawn from two
  * postings to 16 covering all six, and the context it builds from 3.8k
  * characters to 10k. Scoped questions come out byte for byte as before.
+ *
+ * The broad budget is 3 and not 2 because `pnpm eval` priced the difference: it
+ * recovers one more of the 19 sections the question set demands, for 26% more
+ * context (7.4k characters at the median, up from 5.9k). Everything else
+ * measured cost more and returned the same or less -- a budget proportional to
+ * document length spent 47% more context to recover nothing, and both relative
+ * bands are written up in CLAUDE.md as the losers they turned out to be.
  */
-const CHUNKS_PER_DOCUMENT = { focused: 4, broad: 2 };
+export const CHUNKS_PER_DOCUMENT = { focused: 4, broad: 3 };
 /** The most documents that still get the focused budget; past this, coverage wins. */
-const MAX_FOCUSED_DOCUMENTS = 3;
+export const MAX_FOCUSED_DOCUMENTS = 3;
 /**
  * The resume keeps its full allowance no matter how wide the field gets. It is
  * one document but it is one *side* of every comparison, and letting it shrink
  * to a posting's share answered "which role fits me best?" with 12% of the
  * context describing the candidate.
  */
-const RESUME_CHUNKS = 4;
+export const RESUME_CHUNKS = 4;
 
 const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
