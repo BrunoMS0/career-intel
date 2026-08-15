@@ -1,4 +1,4 @@
-import { splitBySize, type Chunk } from "./chunk.ts";
+import { MAX_CHARS, splitBySize, type Chunk } from "./chunk.ts";
 
 /** Section for text that appears before the first heading, or when none exist. */
 const OVERVIEW = "Overview";
@@ -24,7 +24,7 @@ function normalize(markdown: string): string {
     .trim();
 }
 
-type Section = { name: string; body: string[] };
+type Node = { name: string; depth: number; body: string[]; children: Node[] };
 
 /**
  * Re-attaches a markdown table's header to the pieces it was split across.
@@ -55,43 +55,75 @@ function restoreTableHeaders(pieces: string[]): string[] {
   });
 }
 
+/** The heading text, without the emphasis a parser may have carried into it. */
+function headingName(raw: string): string {
+  // A revision of the corpus set its headings in bold and LlamaParse passed the
+  // markers through, so sections arrived called "**ABOUT THE ROLE**" and
+  // "*Required*" -- and that string is not cosmetic here: enrich() embeds it,
+  // and the model quotes it back in every citation.
+  return raw
+    .trim()
+    .replace(/^[*_]+|[*_]+$/g, "")
+    .trim()
+    .replace(/[:\s]+$/, "");
+}
+
+/** A node and everything under it, rendered back to markdown. */
+function render(node: Node): string {
+  return [
+    node.body.join("\n"),
+    ...node.children.map(
+      (child) => `${"#".repeat(child.depth)} ${child.name}\n${render(child)}`,
+    ),
+  ]
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /**
- * Splits LlamaParse markdown along its own headings.
+ * Splits markdown along its own headings, using their depth.
  *
- * Markdown states where a section starts, so none of the guessing in
- * ./chunk.ts is needed here: no heading vocabulary, no caps rule, no
- * Title-Case-above-a-bullet rule. What it does need is a correction for
- * headings the parser invents.
+ * Markdown states where a section starts, so none of the guessing in ./chunk.ts
+ * is needed: no heading vocabulary, no caps rule, no Title-Case-above-a-bullet
+ * rule. Depth then answers two questions that were previously guessed at.
  *
- * Two behaviours are worth knowing, both measured on the real corpus:
+ * **Which heading is a section.** A parent absorbs its whole subtree when the
+ * subtree fits in one chunk, and gives its children sections of their own when
+ * it does not. Two documents in the corpus want opposite answers at the same
+ * depth and this is what separates them: Job #3's six technology groups are 49
+ * to 310 characters and belong together under `Technical Skills / Exposure` --
+ * splitting them cost `missing-job3` two of its three expected sections, with
+ * the one holding Flask at rank 10 -- while the resume's six employers run 400
+ * to 900 characters each and have to stay apart, because "what did I build at
+ * RedMuqui" is answered by one of them. No new constant decides this: a section
+ * is what fits in a chunk, and `MAX_CHARS` already says how big that is.
  *
- * Every heading comes back as `#`. Across thirteen documents LlamaParse emitted
- * 77 headings and not one `##`, so the depth the markdown format could carry is
- * simply absent and sections come out flat.
- *
- * ponytail: depth is therefore ignored rather than turned into a lineage like
- * "What You Bring — Required". Building that machinery for a level the parser
- * has never once emitted is speculation; chunk-markdown.test.ts holds a canary
- * that fails the day a document arrives with real `##`, which is when to write
- * it.
- *
- * A heading with an empty body is not a section. In Job #1 the entries of a
- * skills list -- "Git/GitHub", "Azure DevOps", "CI/CD Pipelines" -- each came
- * back promoted to a heading with nothing underneath. In Job #6 the genuine
- * parent "What You'll Do" has the same shape. They are indistinguishable, so
- * rather than guess a hierarchy this folds the text back into the section it
- * interrupted, which keeps the skills as content and costs only the parent
- * label in the rarer case.
+ * **Which heading is not a section at all.** Job #1's skills list came back
+ * with every entry promoted to a heading -- "Git/GitHub", "Azure DevOps" --
+ * while Job #6's genuine parent "What You'll Do" has the same empty-bodied
+ * shape. Flat, they are indistinguishable and the old rule folded both back
+ * into the interrupted section. With depth they separate cleanly: a real parent
+ * is followed by something deeper, a promoted list item by a sibling.
  */
 export function chunkMarkdown(markdown: string): Chunk[] {
   const lines = normalize(markdown).split("\n");
-  const sections: Section[] = [];
-  let current: Section = { name: OVERVIEW, body: [] };
-  let pending: { name: string; depth: number }[] = [];
+  const root: Node = { name: OVERVIEW, depth: 0, body: [], children: [] };
+  const stack: Node[] = [root];
+  // Where a promoted list item goes back to: the last section that had text.
+  let lastWithText: Node = root;
   let inFence = false;
 
-  const flush = () => {
-    if (current.body.some((line) => line.trim())) sections.push(current);
+  const hasText = (node: Node) => node.body.some((line) => line.trim());
+
+  /** Undoes the last heading when it turned out to be a promoted list item. */
+  const demoteEmpty = (incoming: number) => {
+    const open = stack[stack.length - 1];
+    if (open === root || hasText(open) || open.children.length > 0) return;
+    if (incoming > open.depth) return; // something deeper follows: a real parent
+    stack.pop();
+    stack[stack.length - 1].children.pop();
+    lastWithText.body.push(open.name);
   };
 
   for (const line of lines) {
@@ -99,49 +131,45 @@ export function chunkMarkdown(markdown: string): Chunk[] {
     const heading = inFence ? null : line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
 
     if (!heading) {
-      // A heading only earns its own section once text arrives under it.
-      // Anything still pending was a promoted list item, so it becomes content.
-      if (line.trim() && pending.length) {
-        const opened = pending.pop()!;
-        current.body.push(...pending.map((p) => p.name));
-        pending = [];
-        flush();
-        current = { name: opened.name, body: [] };
-      }
-      current.body.push(line);
+      const open = stack[stack.length - 1];
+      open.body.push(line);
+      if (line.trim()) lastWithText = open;
       continue;
     }
 
-    // Emphasis inside a heading is formatting, not name. A revision of the
-    // corpus set its headings in bold and LlamaParse passed the markers
-    // through, so sections arrived called "**ABOUT THE ROLE**" and "*Required*"
-    // -- and that string is not cosmetic here: enrich() embeds it, and the
-    // model quotes it back in every citation.
-    const name = heading[2]
-      .trim()
-      .replace(/^[*_]+|[*_]+$/g, "")
-      .trim()
-      .replace(/[:\s]+$/, "");
     const depth = heading[1].length;
+    const name = headingName(heading[2]);
+    const open = stack[stack.length - 1];
     // A page break repeats the heading it split; joining the pages produced the
     // duplicate, so the two halves belong to one section.
-    if (name === current.name && !pending.length) continue;
-    if (pending.at(-1)?.name === name) continue;
+    if (name === open.name && depth === open.depth) continue;
 
-    pending.push({ name, depth });
+    demoteEmpty(depth);
+    while (stack.length > 1 && depth <= stack[stack.length - 1].depth) stack.pop();
+
+    const node: Node = { name, depth, body: [], children: [] };
+    stack[stack.length - 1].children.push(node);
+    stack.push(node);
   }
-  current.body.push(...pending.map((p) => p.name));
-  flush();
+  demoteEmpty(1);
 
   const chunks: Chunk[] = [];
-  for (const section of sections) {
-    // Folded headings are appended after the body, so a section can end up with
-    // a run of blank lines between its text and them.
-    const body = section.body.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-    if (!body) continue;
-    for (const content of restoreTableHeaders(splitBySize(body))) {
-      chunks.push({ section: section.name, position: chunks.length, content });
+  const emit = (node: Node) => {
+    const whole = render(node);
+    if (node !== root && whole.length <= MAX_CHARS) {
+      if (whole) add(node.name, whole);
+      return;
     }
-  }
+    const own = node.body.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    if (own) add(node === root ? OVERVIEW : node.name, own);
+    for (const child of node.children) emit(child);
+  };
+  const add = (section: string, body: string) => {
+    for (const content of restoreTableHeaders(splitBySize(body))) {
+      chunks.push({ section, position: chunks.length, content });
+    }
+  };
+
+  emit(root);
   return chunks;
 }

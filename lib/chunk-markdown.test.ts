@@ -95,19 +95,52 @@ test("a section without a table is left alone", () => {
   assert.equal(chunks[0].content, "- Python\n- Go");
 });
 
-test("nesting is flattened, and this is the canary for changing that", () => {
-  // LlamaParse has never emitted a `##` across the whole corpus, so a lineage
-  // like "What You Bring — Required" would be machinery for a case that does
-  // not occur. If this assertion ever fails, the parser started stating depth
-  // and carrying the parent into the section name is finally worth writing.
-  const sections = chunkMarkdown(`# What You Bring
+test("a small subtree becomes one section under its parent", () => {
+  // This used to be the canary for flattening. The parser does state depth once
+  // it is asked to, so the rule is now the one described in chunk-markdown.ts:
+  // a parent that fits in a chunk keeps its children inside it. Job #3's six
+  // technology groups are this shape, and splitting them cost retrieval two of
+  // three expected sections.
+  const chunks = chunkMarkdown(`# What You Bring
 ## Required
 - Python
 
 ## Preferred
-- Go`).map((c) => c.section);
+- Go`);
 
-  assert.deepEqual(sections, ["Overview", "Required", "Preferred"]);
+  assert.deepEqual(
+    chunks.map((c) => c.section),
+    ["What You Bring"],
+  );
+  assert.match(chunks[0].content, /## Required[\s\S]*## Preferred/);
+});
+
+test("a subtree too big for one chunk gives its children their own sections", () => {
+  // The resume's employers: each entry is substantial and has to stay separate,
+  // because "what did I build at RedMuqui" is answered by exactly one of them.
+  const entry = (name: string) => `## ${name}\n${"- did things there. ".repeat(40)}`;
+  const chunks = chunkMarkdown(`# Experience\n${entry("Acme")}\n${entry("Globex")}`);
+
+  assert.deepEqual(
+    chunks.map((c) => c.section),
+    ["Acme", "Globex"],
+  );
+});
+
+test("an empty heading is a parent when something deeper follows it", () => {
+  // Flat, "What You'll Do" and a skills-list entry promoted to a heading look
+  // identical. Depth is what tells them apart.
+  const promoted = chunkMarkdown(`# Skills
+Exposure to:
+
+# Git/GitHub
+
+# Azure DevOps
+
+# Benefits
+- Equity`).map((c) => c.section);
+
+  assert.deepEqual(promoted, ["Skills", "Benefits"]);
 });
 
 test("bold and italic markers are stripped from section names", () => {
