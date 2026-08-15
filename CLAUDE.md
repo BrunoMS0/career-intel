@@ -69,6 +69,7 @@ pnpm chunks ["<label>"] [--full]      # what is actually indexed, from the db
 pnpm retrieve [--chunks] "<question>" # what a question retrieves, with distances
 pnpm eval [--verbose]                 # retrieval eval over eval/questions.json
 pnpm answers [--full] [--report]      # answer eval; --full adds the no-retrieval variant
+pnpm answers --repeat=3               # answer each question 3 times, report what flips
 docker compose exec db psql -U postgres -d career_intel
 ```
 
@@ -607,13 +608,20 @@ Gemini refused outright — asked what the roles have in common it replied the
 documents "do not state" it "as there is no text comparing or defining shared
 attributes", reading grounding as requiring the comparison to be *stated* rather
 than derivable, and cited nothing. Gemma answers it in three bullets with all
-seven postings cited. Gemma loses `llm-rag-job4`, and loses it the same way:
-asked whether the candidate has enough experience "with LLMs and RAG" for Job
-#4, it collapsed the compound question into its unanswerable half and replied
-only that the documents do not state anything about RAG — while `Job #4 —
-EXPERIENCE` was in the context stating the LLM and agentic bar, and Gemini
-answered both halves. So both models over-refuse; they just do it on different
-question shapes, and neither over-refusal is a retrieval failure.
+seven postings cited. Gemma loses `llm-rag-job4`: asked whether the candidate
+has enough experience "with LLMs and RAG" for Job #4, it collapsed the compound
+question into its unanswerable half and replied only that the documents do not
+state anything about RAG — while `Job #4 — EXPERIENCE` was in the context
+stating the LLM and agentic bar, and Gemini answered both halves. So both models
+over-refuse; they just do it on different question shapes, and neither
+over-refusal is a retrieval failure.
+
+**That last sentence is weaker than it reads, and the repeat pass below is what
+weakened it.** `llm-rag-job4` is not a Gemma failure, it is a coin flip: three
+samples of it come back 1 clean and 2 not. So the one question that separates
+the two models is the one question that cannot separate anything, and the honest
+version of the tie is that a 20-question comparison at one sample each does not
+establish a difference in either direction.
 
 **The app's own configuration scores 29 of 31 on gemma**, the same number the
 phase 5 corpus scored on gemini. All 7 absent questions admitted as absent, both
@@ -630,6 +638,39 @@ does not, so the check is a proxy the corpus change broke. It also exposes the
 resume allowance — only 4 of the resume's 10 sections reach the prompt, so three
 of the six employers were never shown. That is the unmeasured knob at the bottom
 of this file, with its first piece of evidence.
+
+**The score is a range, not a number — measured, `pnpm answers --repeat=3`.**
+Every figure this harness had ever reported came from one sample. Three samples
+of each of the 23 questions that reach the model settle what that was worth:
+
+```
+run 1   29/31
+run 2   29/31
+run 3   30/31
+        21 of 23 repeated questions landed the same way all three times
+```
+
+So the system is mostly stable and the headline is **29 to 30 of 31**. The two
+that are not stable are the two failures, and they fail differently:
+
+- `summarize` fails **3 of 3**. That is a systematic result, not noise, which
+  strengthens rather than weakens the reading below that the check is the thing
+  at fault.
+- `llm-rag-job4` is clean **1 of 3**, on byte-identical context — 4,870
+  characters, same sections, same order, same prompt. Two samples answer only
+  the RAG half in one line with no citations; the third answers both halves in
+  four bullets and catches the browser-automation gap as well. Nothing but
+  sampling separates them.
+
+That single question is the whole argument for repeating. It had been written up
+as a property of the model and it is a property of one draw, and no amount of
+reading the answer would have revealed that — only answering it again did.
+
+What it does *not* find is a system that wobbles everywhere: 21 of 23 are
+reproducible, so the eval was not measuring noise, it was quoting a range as a
+point. Repeat the deciding questions before writing a number down; the run order
+already puts the previous pass's failures first, so a truncated repeat still
+prices what a conclusion rests on.
 
 **Two checks were wrong before the answers were, again.** Both were found by
 reading the failures rather than by the score, which is the only way this
