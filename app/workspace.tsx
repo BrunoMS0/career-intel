@@ -45,7 +45,7 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
     // `min-h-0` is what lets the transcript below scroll instead of growing.
     <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 gap-8 p-6">
       <aside className="hidden w-64 shrink-0 flex-col gap-4 md:flex">
-        <Uploader />
+        <Uploader documents={documents} />
         <DocumentList documents={documents} />
       </aside>
 
@@ -271,9 +271,24 @@ function DocumentList({ documents }: { documents: DocumentSummary[] }) {
   );
 }
 
-function Uploader() {
+function Uploader({ documents }: { documents: DocumentSummary[] }) {
   const router = useRouter();
   const [status, setStatus] = useState<string>();
+  const [kind, setKind] = useState("job");
+  const [label, setLabel] = useState("");
+
+  // Mirrors the check in the route, which is the one that counts -- this exists
+  // so the answer arrives before a PDF is parsed and embedded rather than after.
+  // Case-insensitive for the same reason: resolveScope squashes case, so two
+  // labels differing only in it are one scope key.
+  const clash =
+    label.trim() !== "" &&
+    documents.some(
+      (document) =>
+        document.label.toLowerCase() === label.trim().toLowerCase() &&
+        // A new resume replaces the indexed one and frees its label with it.
+        !(kind === "resume" && document.kind === "resume"),
+    );
 
   async function upload(form: HTMLFormElement) {
     setStatus("Indexing…");
@@ -283,6 +298,9 @@ function Uploader() {
     setStatus(response.ok ? (body.warning ?? `Indexed into ${body.chunks} chunks`) : body.error);
     if (response.ok) {
       form.reset();
+      // reset() does not reach a controlled input, so the label would survive
+      // the upload and clash with the document it just created.
+      setLabel("");
       router.refresh();
     }
   }
@@ -297,22 +315,53 @@ function Uploader() {
     >
       <input
         name="label"
-        placeholder="Label, e.g. Job #7"
+        value={label}
+        onChange={(event) => setLabel(event.target.value)}
+        placeholder="Label, e.g. Job #8"
         required
-        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
+        aria-invalid={clash}
+        className={`w-full rounded border px-2 py-1 text-sm dark:bg-neutral-950 ${
+          clash
+            ? "border-red-500 dark:border-red-500"
+            : "border-neutral-300 dark:border-neutral-700"
+        }`}
       />
+      {clash && <p className="text-xs text-red-600">That label is already taken.</p>}
       <select
         name="kind"
-        defaultValue="job"
+        value={kind}
+        onChange={(event) => setKind(event.target.value)}
         className="w-full rounded border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
       >
         <option value="job">Job posting</option>
         <option value="resume">Resume</option>
       </select>
+
+      {/* Only postings. The resume is in scope for every question, so an
+          identity on it would be data the "/" menu then has to hide. */}
+      {kind === "job" && (
+        <>
+          <input
+            name="company"
+            placeholder="Company (optional)"
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
+          />
+          <input
+            name="role_title"
+            placeholder="Role title (optional)"
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
+          />
+          <p className="text-xs text-neutral-500">
+            Optional, but they are how the “/” menu and questions find this role.
+          </p>
+        </>
+      )}
+
       <input name="file" type="file" accept="application/pdf" required className="w-full text-xs" />
       <button
         type="submit"
-        className="w-full rounded bg-neutral-900 px-2 py-1 text-sm text-white dark:bg-neutral-100 dark:text-neutral-900"
+        disabled={clash}
+        className="w-full rounded bg-neutral-900 px-2 py-1 text-sm text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
       >
         Add PDF
       </button>

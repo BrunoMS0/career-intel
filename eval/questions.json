@@ -84,6 +84,10 @@
     ],
     "coverage": ["Job #1", "Job #2", "Job #3", "Job #4", "Job #5", "Job #6", "Job #7"],
     "must": ["Job #1", "Job #2", "Job #3", "Job #4", "Job #5", "Job #6", "Job #7"],
+    "mustNot": [
+      "#2[^.\\n]{0,90}(not (stated|specified|state|specify|have|list|mention)|no .{0,20}location)",
+      "#3[^.\\n]{0,90}(not (stated|specified|state|specify|have|list|mention)|no .{0,20}location)"
+    ],
     "why": "Only Job #6 is remote (Location: Remote | Type: Contract, now under the Forward Deployed Engineer heading rather than Overview, which the agentic parse reduced to an image caption). The rest: Job #1 San Francisco in-office 4-5 days, Job #2 Santa Ana on-site, Job #3 New York hybrid, Job #4 San Francisco, Job #5 Location: Not specified.\n\nJob #7 states no location anywhere in five pages -- no city, no remote, no compensation -- so it appears in coverage and in must but not in evidence: there is no section to retrieve. A complete answer names it as the one posting that does not say. That makes this the hardest question in the set and it was already the one known failure: the prompt allows one opening sentence and at most four bullets, which could not carry six postings and now has seven. Retrieval owns half of this failure and the answer shape owns the other half."
   },
   {

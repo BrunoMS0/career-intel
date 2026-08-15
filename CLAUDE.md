@@ -1176,36 +1176,64 @@ that used to run. The MIRROR check also gained a third question,
 `title-afficiency`, so the offline replay is verified against the real SQL on
 the identity path and not only on the label one.
 
+**Done: the `mustNot` on `remote-jobs`, and the hollow pass is gone.** The
+pattern designed below was applied as written and checked against the whole
+cache rather than the three questions the design named: it fires on **3 of 116**
+cached answers, all three of them `remote-jobs`, and on nothing else. So the
+false-positive worry it was hedged against does not exist on this corpus.
+
+```
+                  before    after
+score, 3 runs     40–42     39–41  / 44
+answerable        25/29     24/29
+remote-jobs        3/3       0/3
+```
+
+The score going down is the result. All three runs claim Job #2 and Job #3 do
+not state a location, in the three phrasings the design predicted -- "do not
+state a location", "do not have a stated location", "location not stated or not
+specified" -- and both postings state one, Santa Ana on-site and New York
+hybrid. The answer was passing because `must` only asks that all seven postings
+be named, and naming one with a false claim about it satisfies that.
+
+Know what this is, because it is easy to over-read: a regression guard for one
+false claim fitted to three observed phrasings, not a detector for the class
+"the answer denies something the corpus contains". No regex reaches that. The
+real fix is retrieval -- Job #2's and Job #3's headers rank 4th and 5th inside
+their own documents, and getting them into the context stops the claim being
+made at all. This just stops the harness reporting the failure as a pass.
+
+**Done: the upload form sets identity, and the label is checked before the
+parse.** `company` and `role_title` are optional fields on the uploader, shown
+only for a posting -- the resume is in scope for every question, so an identity
+on it would be data the "/" menu then has to hide. Empty means null, which is a
+working state: `resolveScope` still matches the label, so a posting with no
+identity behaves exactly as every document did before phase 7. It just cannot be
+found by the names people actually use, so the response says so rather than
+enforcing anything.
+
+The label was already unique in `db/schema.sql`, and that was not enough for two
+reasons. Reaching the index costs a LlamaParse round trip and an embedding call
+per chunk first, so a duplicate label paid for a full ingest to fail on the
+insert; the route now asks the database before any of that. And the index is
+case-sensitive while `resolveScope` squashes case, so "Job #1" and "job #1" are
+one scope key and a question naming either would pull both documents -- the
+pre-check is deliberately stricter than the index. The 23505 handler stays as
+the race guard. A resume is exempt against the resume already indexed, since
+uploading one replaces it in the same transaction and frees its label.
+
 ### Open, in order, with what is already known about each
 
-Three things were designed and measured but not applied. Each has its evidence
+Two things were designed and measured but not applied. Each has its evidence
 above; this is only the shortlist.
 
-1. **A `mustNot` on `remote-jobs`**, so an answer that denies a location the
-   corpus states stops counting as a pass. The naive pattern does not work and
-   was tested rather than assumed: `Job #2[^.]{0,60}(does not|do not)
-   (state|specify)` fires on **1 of the 3 runs**, because the same false claim
-   arrives in three phrasings — "do not state a location", "do not have a stated
-   location", "location not stated or not specified". What fires on all three
-   without false-positiving on `comp-location-job1`, `pay-job2` or
-   `compare-all` is
-   `#2[^.\n]{0,90}(not (stated|specified|state|specify|have|list|mention)|no
-   .{0,20}location)` and the same for `#3`. Applying it moves the score from
-   35–37 to **34–36 of 38**, which is the point: the pass was hollow.
-
-   Know what this is. It is a regression guard for one false claim, fitted to
-   three observed phrasings — not a detector for the class "the answer denies
-   something the corpus contains", which no regex reaches. The real fix is
-   retrieval: get Job #2's and Job #3's headers into the context and the claim
-   stops being made.
-
-2. **The mirror question for `fit-underqualified-job6`.** That answer says "Yes,
+1. **The mirror question for `fit-underqualified-job6`.** That answer says "Yes,
    underqualified" and lists four gaps and no matches. Whether that is framing
    bias or just a direct answer to a yes/no question is not settled by reading
    it — it is settled by asking "am I well qualified for Job #6?" and seeing
    whether the answer becomes all-positive. One question, three runs.
 
-3. **`fit-underqualified-job6` on `gemini-3.7-flash`.** Its invented citation
+2. **`fit-underqualified-job6` on `gemini-3.7-flash`.** Its invented citation
    contradicts phase 5's finding that the filtered variant cannot produce one,
    but phase 5 measured Gemini and this measured Gemma, and the question is new
    so Gemini never saw it. Either the excerpt count was never the cause, or
