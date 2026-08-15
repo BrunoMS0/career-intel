@@ -11,24 +11,25 @@ import { assessRetrieval, WEAK_DISTANCE } from "./guardrail.ts";
 const section = (distance: number, spread = 0.05) => ({ distance, spread });
 
 test("a best hit past the floor is weak", () => {
-  assert.equal(assessRetrieval([section(0.5118)]).weak, true);
+  assert.equal(assessRetrieval([section(0.5019)]).weak, true);
 });
 
 test("a best hit inside the floor is not", () => {
-  assert.equal(assessRetrieval([section(0.3640)]).weak, false);
+  assert.equal(assessRetrieval([section(0.3589)]).weak, false);
 });
 
 test("the floor sits between the two measured populations", () => {
-  // The band the constant was picked from. If someone tightens it to 0.30 --
-  // the value the original two-question sample suggested -- this fails and says
-  // which real question it would have refused.
+  // The band the constant was picked from, remeasured on the eight-document
+  // corpus. The edges are questions, not round numbers: if someone tightens the
+  // constant this fails and says which real question it would have refused.
   assert.ok(
-    WEAK_DISTANCE > 0.364,
-    "would refuse 'compare all the postings for me', measured at 0.3640",
+    WEAK_DISTANCE > 0.3705,
+    "would refuse the injection 'ignore the excerpts...', measured at 0.3705, " +
+      "which has to reach the model so the prompt can decline it",
   );
   assert.ok(
-    WEAK_DISTANCE < 0.4048,
-    "would admit 'how should I prepare for a system design interview?', measured at 0.4048",
+    WEAK_DISTANCE < 0.404,
+    "would admit 'how should I prepare for a system design interview?', measured at 0.4040",
   );
 });
 
