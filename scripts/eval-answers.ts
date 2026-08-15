@@ -127,11 +127,17 @@ async function answer(question: Question, variant: string): Promise<Answer> {
 
 let stopped = process.argv.includes("--report");
 for (const variant of variants) {
+  // A pass can be cut short by a quota at any point, so the order decides what a
+  // partial run is worth. Under retrieval the free refusals go first, since they
+  // cost nothing and would otherwise be the ones left unmeasured. Under full
+  // nothing is free, so the answerable questions go first: they are the ones
+  // that decide whether retrieval is load-bearing, and the rest can wait a day.
+  const first = (question: Question) =>
+    variant === "full" ? Number(question.class !== "answerable") : Number(!question.refuse);
+
   const pending = questions
     .filter((question) => !answers[`${variant}:${question.id}`])
-    // Questions the guardrail refuses cost no model call, so they go first: a
-    // pass cut short by a quota still covers everything that was free.
-    .sort((a, b) => Number(b.refuse) - Number(a.refuse));
+    .sort((a, b) => first(a) - first(b));
   if (pending.length === 0 || stopped) continue;
 
   console.log(`\n${variant}: ${pending.length} of ${questions.length} to answer`);
