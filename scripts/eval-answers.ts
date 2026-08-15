@@ -114,7 +114,12 @@ async function answer(question: Question, variant: string): Promise<Answer> {
     model: google(CHAT_MODEL),
     system: buildPrompt(sections),
     prompt: question.q,
-    maxRetries: 3,
+    // One retry, not three. The free tier answers 503 "high demand" in bursts
+    // and every attempt counts against the same 20 requests a day, so riding a
+    // burst out in-process costs four quota units per question and can spend a
+    // whole day's allowance without caching a single answer -- measured, phase
+    // 6. Rerunning is the cheaper retry: the cache makes it free.
+    maxRetries: 1,
   });
 
   return {

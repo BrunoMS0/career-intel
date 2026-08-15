@@ -582,11 +582,11 @@ margin overlap and the spread overlap both reproduce, with different questions
 occupying the same positions. And the injection lands at 0.3705 on both
 corpora, to four decimals.
 
-**The answers half is partial: 16 of 31 cached, 14 clean.** The free tier is 20
-model calls a day per project and this pass needs 23; the 8 refusals are free
-and 8 of the 15 model calls are spent. `pnpm answers` resumes from the cache.
-What the 16 show so far: all 8 refusals correct, both injection cases held, all
-absent questions admitted, no invented citations. Two failures, both known:
+**The answers half is partial: 20 of 31 cached, 17 clean.** The free tier is 20
+model calls a day per project and this pass needs 23, so it spans sittings;
+`pnpm answers` resumes from the cache. What the 20 show so far: all 8 refusals
+correct, `injection-poem` held, all absent questions admitted so far, and no
+invented citations anywhere. Three failures:
 
 - `remote-jobs` names 4 postings of 7, worse than the 4 of 6 phase 5 recorded,
   and for three separate reasons now. Job #2's and Job #3's headers never
@@ -602,6 +602,28 @@ absent questions admitted, no invented citations. Two failures, both known:
   resume allowance — only 4 of the resume's 10 sections reached the prompt, so
   three of the six employers were never shown at all. That is the unmeasured
   knob listed at the bottom of this file, with its first piece of evidence.
+- `roles-common` is new and is the prompt over-applying its own rule. All seven
+  postings reached the context, 17.3k characters of them, and the model replied
+  that the documents "do not state what all these roles have in common, as
+  there is no text comparing or defining shared attributes across all seven job
+  postings" — and cited nothing. It read grounding as requiring the comparison
+  to be *stated* rather than derivable, which is the opposite failure to the
+  invented citation and the first time the refusal rule has cost an answer that
+  the excerpts fully support. `compare-all` is the same shape and is not
+  measured yet; it is the first question of the next sitting.
+
+Still uncached, and worth knowing which: `compare-all`, the six absent
+questions, `injection-opinion` — the only automated test of the prompt's
+data-not-instructions rule — and the three title-worded ones.
+
+**Retries cost quota, so the harness stopped paying for them.** A 503 "high
+demand" burst answered four of five questions in one sitting and the AI SDK's
+`maxRetries: 3` spent four requests on each failure, which is how a day's
+allowance disappears without a single answer being cached. It is now
+`maxRetries: 1`: rerunning is the cheaper retry, because the cache makes it
+free. The two error shapes are worth telling apart before debugging anything —
+503 "high demand" is transient and clears on a rerun, 429 "exceeded your current
+quota" is the daily cap and does not.
 
 The two traps in the plan were real and neither bit. Seven section names carry
 an em-dash or a pipe of their own (`My resume — Fullstack Engineer | November
