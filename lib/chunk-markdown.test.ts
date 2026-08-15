@@ -109,3 +109,15 @@ test("nesting is flattened, and this is the canary for changing that", () => {
 
   assert.deepEqual(sections, ["Overview", "Required", "Preferred"]);
 });
+
+test("bold and italic markers are stripped from section names", () => {
+  // A revision of the corpus set its headings in bold. The markers arrived
+  // inside the section name, which enrich() embeds and the model cites back.
+  const sections = chunkMarkdown(`# **ABOUT THE ROLE**
+We build things.
+
+# *Required*
+- TypeScript`).map((c) => c.section);
+
+  assert.deepEqual(sections, ["ABOUT THE ROLE", "Required"]);
+});

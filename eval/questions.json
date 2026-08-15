@@ -6,7 +6,7 @@
     "recorded": 0.2431,
     "scope": ["Job #4"],
     "refuse": false,
-    "evidence": ["Job #4 — Experience", "My resume — T E C H N I C A L S K I L L S"],
+    "evidence": ["Job #4 — EXPERIENCE", "My resume — T E C H N I C A L S K I L L S"],
     "coverage": ["Job #4", "My resume"],
     "anyOf": ["agentic", "agent"],
     "why": "Job #4 — Experience states the bar (3+ years, 1+ year agentic workflows, Python, LLMs, browser automation); the resume states what the candidate has. Job #4 never mentions RAG, so a correct answer says the posting does not ask for it rather than scoring the candidate against it."
@@ -19,7 +19,7 @@
     "scope": ["Job #3"],
     "refuse": false,
     "evidence": [
-      "Job #3 — Technical Skills / Exposure",
+      "Job #3 — Back-End",
       "Job #3 — Experience",
       "My resume — T E C H N I C A L S K I L L S"
     ],
@@ -34,7 +34,7 @@
     "recorded": 0.2569,
     "scope": ["Job #1"],
     "refuse": false,
-    "evidence": ["Job #1 — Overview", "Job #1 — Compensation Notes"],
+    "evidence": ["Job #1 — AI Engineer — Core AI Systems", "Job #1 — COMPENSATION NOTES"],
     "coverage": ["Job #1"],
     "must": ["San Francisco", "180"],
     "why": "Two facts in two places. Job #1 — Overview carries both lines (Location: San Francisco, in-office 4-5 days/week; Compensation: $180,000-$300,000); Compensation Notes repeats only the range. This is the question that fails half-way if a relative band prunes too tightly — the recorded best hit is 0.2569 and Overview sits at 0.2922."
@@ -47,7 +47,7 @@
     "scope": ["Job #3"],
     "refuse": false,
     "evidence": [
-      "Job #3 — Technical Skills / Exposure",
+      "Job #3 — Back-End",
       "Job #3 — Experience",
       "My resume — T E C H N I C A L S K I L L S"
     ],
@@ -76,7 +76,7 @@
     "refuse": false,
     "evidence": [
       "Job #6 — Overview",
-      "Job #1 — Overview",
+      "Job #1 — AI Engineer — Core AI Systems",
       "Job #2 — Mid-Level AI Product / Creative-Tools Engineer",
       "Job #3 — AI Prompt Engineer / AI Application Engineer",
       "Job #4 — Agentic AI Engineer",
@@ -362,7 +362,7 @@
     "class": "answerable",
     "scope": [],
     "refuse": false,
-    "evidence": ["Job #4 — Experience", "My resume — T E C H N I C A L S K I L L S"],
+    "evidence": ["Job #4 — EXPERIENCE", "My resume — T E C H N I C A L S K I L L S"],
     "coverage": ["Job #4", "My resume"],
     "anyOf": ["browser automation", "browser"],
     "mustNot": ["no degree", "degree is not", "lacks a degree", "not (state|list|mention).{0,12}degree"],
@@ -385,7 +385,7 @@
     "class": "answerable",
     "scope": [],
     "refuse": false,
-    "evidence": ["Job #5 — Requirements", "Job #1 — Required"],
+    "evidence": ["Job #5 — REQUIREMENTS", "Job #1 — Required"],
     "coverage": ["Job #1", "Job #5"],
     "must": ["Job #5", "Job #1"],
     "why": "A title two postings share, which was not obvious until the corpus was checked: Job #5 is titled AI Engineer and Job #1 is AI Engineer — Core AI Systems at Gamma. Job #4 (Agentic AI Engineer) and Job #3 (AI Prompt Engineer) are near misses that should not be folded in. So the correct answer covers exactly two postings and says so, and the failure to watch for is presenting one posting's requirements as \"the\" role's. The first run passed: it answered about \"the AI Engineer roles\" in the plural and cited Job #1 and Job #5 and nothing else."

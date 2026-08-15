@@ -112,7 +112,16 @@ export function chunkMarkdown(markdown: string): Chunk[] {
       continue;
     }
 
-    const name = heading[2].trim().replace(/[:\s]+$/, "");
+    // Emphasis inside a heading is formatting, not name. A revision of the
+    // corpus set its headings in bold and LlamaParse passed the markers
+    // through, so sections arrived called "**ABOUT THE ROLE**" and "*Required*"
+    // -- and that string is not cosmetic here: enrich() embeds it, and the
+    // model quotes it back in every citation.
+    const name = heading[2]
+      .trim()
+      .replace(/^[*_]+|[*_]+$/g, "")
+      .trim()
+      .replace(/[:\s]+$/, "");
     const depth = heading[1].length;
     // A page break repeats the heading it split; joining the pages produced the
     // duplicate, so the two halves belong to one section.
