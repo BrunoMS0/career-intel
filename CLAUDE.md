@@ -896,6 +896,67 @@ stay at 24 sections and ~16%, because they are about the resume and no posting
 label appears in them. Narrowing on the *absence* of a posting signal is a
 different and harder rule, and it is not attempted here.
 
+**Enriching what gets embedded does not fix the misses either — measured, and
+two more hypotheses lost.** `enrich()` in `lib/chunk.ts` produces
+`label — section: content`, which is what the embedding sees; `buildPrompt`
+builds its own `[label — section]` separately, so anything added here is free of
+citation consequences. Two changes were proposed and tested offline by
+re-embedding all 72 chunks in memory and replaying the live budget rule:
+
+- **identity** — `Kargo — Agentic AI Engineer — SECTION: content`, so every
+  chunk of a posting carries its company and role title instead of `Job #4`
+- **a normalised section-role tag** on top of it, because seven postings spell
+  "requirements" seven ways (`WHAT YOU'LL BRING`, `REQUIREMENTS`,
+  `QUALIFICATIONS`, `What You Bring`, `REQUIRED EXPERIENCE`, …)
+- and separately, **dropping boilerplate** from the index: `Job #4 — EQUAL
+  OPPORTUNITY STATEMENT`, `Job #6 — Overview` (12 characters, "Newpage logo")
+  and the resume's contact header
+
+```
+                                     evidence recall
+current                                 33/45 = 73.3%
+current + no boilerplate                34/45 = 75.6%
+identity                                33/45 = 73.3%
+identity + no boilerplate               34/45 = 75.6%
+identity + role tag                     34/45 = 75.6%
+identity + role tag + no boilerplate    34/45 = 75.6%
+```
+
+**Three different routes top out at the same 34/45**, and the cheapest of them
+is a filter that embeds nothing. Enrichment is not the binding constraint.
+
+What the aggregate hides is that identity **churns** rather than improves: it
+fixes `remote-jobs`' Job #3 header, `twin-interview-afficiency` and
+`twin-align-golden`, and breaks `llm-rag-job4`, `interview-prep-job6` and
+`twin-fit-ecommerce` — net zero. The role tag then fixes `missing-job3-es` and
+breaks `summarize`, for net +1 and the same total the free filter reaches.
+
+**And it damages the resume systematically.** Under identity, `llm-rag-job4`,
+`align-job5` and `twin-align-golden` all lose `My resume — TECHNICAL SKILLS`;
+under the role tag `summarize` also loses `My resume — SUMMARY`. Prefixing the
+resume with `Bruno Monzén Sullón — Fullstack Engineer` moves it away from
+questions about skills, which reproduces what a single-question probe had
+already shown: asked about Kargo, the resume's best chunk went 0.4027 to 0.4240
+and stayed last of eight. If anyone revisits this, enrich the postings only and
+leave the resume's prefix alone — that is the untested variant.
+
+**Dropping boilerplate is worth taking and worth not overselling.** It is one
+`retrievable = false` flag, no re-index, and it cannot regress: the miss profile
+is the current one minus `twin-story-kargo`, which recovers `Job #4 —
+EXPERIENCE` because `EQUAL OPPORTUNITY STATEMENT` was holding one of Job #4's
+three slots. That is the same thing observed by hand on "am I a good fit for
+Kargo position?", where the legal boilerplate ranked **2nd of all Job #4
+sections** and pushed `RESPONSIBILITIES` and `EXPERIENCE` out of the budget.
+Priced across the whole set, though, boilerplate is only 9 of 618 retrieved
+sections — 1.5%, 3,852 characters over 36 questions.
+
+Four misses survive every variant: `Job #7 — REQUIRED EXPERIENCE`, `Job #3 —
+QUALIFICATIONS`, Job #2's header and `My resume — TECHNICAL SKILLS`. Those are
+the four measured at rank 5 to 8 with neighbours 0.0047 apart. Three hypotheses
+about the index — finer chunks, identity, section-role tags — have now failed on
+the same four, which is as clear as this corpus can say that the problem is
+ordering and not representation.
+
 **Finer chunks do not fix the misses — measured, and the hypothesis lost.** The
 proposal was a third level: split each section into its bullets, search at
 bullet level, keep the section as the payload. Small-to-big, which the repo
