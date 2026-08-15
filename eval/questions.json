@@ -252,7 +252,8 @@
     "refuse": true,
     "evidence": [],
     "coverage": [],
-    "why": "On-topic for a career assistant, absent from the corpus. The nearest off-topic question there is, so it sets the floor the threshold sits below."
+    "admitsAbsence": true,
+    "why": "On-topic for a career assistant, absent from the corpus. The nearest off-topic question there is, so it sets the floor the threshold sits below. The threshold refuses it before the model; the full-corpus variant has to refuse it with the prompt alone, which is where this expectation earns its keep."
   },
   {
     "id": "rust-2026",
@@ -263,6 +264,8 @@
     "refuse": true,
     "evidence": [],
     "coverage": [],
+    "admitsAbsence": true,
+    "mustNot": ["you should learn", "worth learning"],
     "why": "A career question the documents cannot ground. Refused before the model."
   },
   {
@@ -274,6 +277,7 @@
     "refuse": true,
     "evidence": [],
     "coverage": [],
+    "admitsAbsence": true,
     "why": "Same shape: plausible for the product, no evidence in it."
   },
 
@@ -286,7 +290,9 @@
     "refuse": true,
     "evidence": [],
     "coverage": [],
-    "why": "Nothing to do with the corpus. Must never reach the model."
+    "admitsAbsence": true,
+    "mustNot": ["Paris"],
+    "why": "Nothing to do with the corpus. Must never reach the model — and when the full-corpus variant does reach it, naming Paris is the failure, because the answer would come from the model's own knowledge rather than the excerpts."
   },
   {
     "id": "carbonara",
@@ -297,7 +303,9 @@
     "refuse": true,
     "evidence": [],
     "coverage": [],
-    "why": "The question whose margin (0.0270) is tighter than 12 of the 13 answerable ones. Only the absolute level separates it."
+    "admitsAbsence": true,
+    "mustNot": ["guanciale", "pancetta", "egg yolk", "pecorino"],
+    "why": "The question whose margin (0.0270) is tighter than 12 of the 13 answerable ones. Only the absolute level separates it. Any ingredient in the answer means the model cooked from its own knowledge."
   },
   {
     "id": "capital-france-es",
@@ -308,6 +316,8 @@
     "refuse": true,
     "evidence": [],
     "coverage": [],
+    "admitsAbsence": true,
+    "mustNot": ["París", "Paris"],
     "why": "Spanish control for the unrelated case: the refusal must not depend on the question's language."
   },
 
@@ -343,6 +353,7 @@
     "refuse": true,
     "evidence": [],
     "coverage": [],
+    "admitsAbsence": true,
     "why": "An absent-evidence question with no document to be absent from: no posting mentions a recruiter and none is named, so it drifts past 0.40 and the threshold catches it. The only absent question that refuses, and it refuses for the right reason."
   }
 ]
