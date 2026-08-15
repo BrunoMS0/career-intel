@@ -45,6 +45,8 @@ https://github.com/BrunoMS0/career-intel
   rule that decides how wide the search gets and `pnpm test` has to reach it
 - `db/identities.sql` — the eight companies and role titles, applied by hand.
   Re-run it after re-ingesting; nothing detects that it was not
+- `lib/mention.ts` — the "/" picker's rule: which token is a mention, which
+  postings it offers, what text replaces it. Pure, so `pnpm test` covers it
 - `lib/guardrail.ts` — the 0.40 threshold and the refusal text, kept free of db
   imports so the deterministic suite can test it with injected distances
 - `lib/ingest.ts` — parse, chunk, embed, store in one transaction
@@ -1209,6 +1211,43 @@ above; this is only the shortlist.
    so Gemini never saw it. Either the excerpt count was never the cause, or
    Gemma is more prone to it. Three calls separate the two.
 
+**Done: a "/" picker in the chat box, and it inserts plain text on purpose.**
+Typing "/" lists the indexed postings — label on top, `company — role title`
+underneath — filtered as you keep typing, picked with the arrows and Enter or
+with the mouse. What it inserts is the label and nothing else: "/aff" becomes
+the string "Job #3", the request is byte-identical to one where the label was
+typed by hand, and `resolveScope` handles it exactly as it has since phase 3.
+
+There is no id riding along and no second channel to the server, which is the
+design decision worth keeping. A structured `scope: [id]` would survive the user
+editing the text afterward, and that is the only thing it would buy; against it,
+plain text means the picker cannot disagree with the retriever, a mis-picked
+posting is visible in the box before anything is sent, and a half-deleted one
+degrades to an ordinary sentence rather than a broken reference. Revisit if
+someone actually breaks a mention by editing it.
+
+It composes with the identity columns rather than duplicating them. The menu
+matches on the same three names `resolveScope` matches on, so it can never offer
+a posting under a name that would not have resolved it — and phase 7's
+part-matching is what lets the sidebar and the menu show "Afficiency — AI Prompt
+Engineer" while the box still receives something that resolves. Without it the
+picker would have had to insert the ugly label to work at all.
+
+The rule is in `lib/mention.ts` and tested (`mentionQuery` refuses to open on a
+URL, a fraction or a date, and closes once the sentence carries on); the menu
+itself is in `Composer` in `app/workspace.tsx`. Two things the browser found
+that reading would not have:
+
+- A `select` event can arrive *after* the text it describes is gone. Select the
+  whole box and type over it, and the late event reports the old caret and
+  closes the menu the typing had just opened. The handler now ignores any
+  selection whose value no longer matches.
+- The composer was never pinned to the bottom of the page. `body` is
+  `min-h-full`, so its height is auto and the `h-full` on `main` resolved to the
+  content instead of the viewport — the form floated mid-page and the menu, which
+  opens upward, rendered off the top edge. `flex-1` plus `min-h-0` fixes it, and
+  the transcript scrolls now instead of growing.
+
 ### Phase 8 — the UI
 
 Real labels were the whole of this phase and there is nothing retrieval-shaped
@@ -1222,7 +1261,9 @@ invalidate `eval/answers.json`, since the citation contract prints the label.
 
 What is left: the UI polish and the app Dockerfile that were always phase 6, the
 markdown rendering the answers still do not do, and an upload form that can set
-company and role title so a ninth document does not arrive identity-less.
+company and role title so a ninth document does not arrive identity-less. The
+"/" picker above already covers the part of this phase that users would feel —
+they pick a posting by its real name and never have to know it is Job #3.
 
 Known and deliberate, not yet fixed:
 

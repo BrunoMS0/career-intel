@@ -3,14 +3,22 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isTextUIPart } from "ai";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { applyMention, mentionQuery, suggest } from "@/lib/mention";
 
 export type DocumentSummary = {
   id: string;
   kind: "resume" | "job";
   label: string;
+  /** Null on the resume, and on a posting nobody gave an identity. */
+  company: string | null;
+  role_title: string | null;
   chunks: number;
 };
+
+/** What a document is called when there is something better than "Job #3". */
+const identity = (document: DocumentSummary) =>
+  [document.company, document.role_title].filter(Boolean).join(" — ");
 
 const SUGGESTIONS = [
   "What skills am I missing for Job #1?",
@@ -19,7 +27,6 @@ const SUGGESTIONS = [
 ];
 
 export function Workspace({ documents }: { documents: DocumentSummary[] }) {
-  const [input, setInput] = useState("");
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
@@ -29,17 +36,20 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
   function ask(question: string) {
     if (!question.trim() || busy) return;
     void sendMessage({ text: question });
-    setInput("");
   }
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-6xl gap-8 p-6">
+    // `flex-1`, not `h-full`: body is `min-h-full`, so its height is auto and a
+    // percentage height here resolves to the content instead of the viewport --
+    // which left the composer floating mid-page and its menu off the top edge.
+    // `min-h-0` is what lets the transcript below scroll instead of growing.
+    <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 gap-8 p-6">
       <aside className="hidden w-64 shrink-0 flex-col gap-4 md:flex">
         <Uploader />
         <DocumentList documents={documents} />
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex-1 space-y-4 overflow-y-auto pb-4">
           {messages.length === 0 && (
             <div className="space-y-2 pt-8">
@@ -75,29 +85,161 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
           {error && <p className="text-sm text-red-600">{error.message}</p>}
         </div>
 
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            ask(input);
-          }}
-          className="flex gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-800"
-        >
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="What skills am I missing for Job #1?"
-            className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-950"
-          />
-          <button
-            type="submit"
-            disabled={busy || !input.trim()}
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
-          >
-            Ask
-          </button>
-        </form>
+        <Composer
+          documents={documents.filter((document) => document.kind === "job")}
+          busy={busy}
+          onAsk={ask}
+        />
       </section>
     </main>
+  );
+}
+
+/**
+ * The question box, with a "/" picker over the indexed postings.
+ *
+ * It inserts the posting's label as plain text and stops there. Nothing is
+ * encoded, no id rides along, and the request is the same string it would have
+ * been if the label were typed by hand -- the picker is here so nobody has to
+ * remember that Job #3 is Afficiency, not because retrieval needs the help.
+ *
+ * The cost of being wrong is therefore what it should be: a mis-picked posting
+ * is visible in the box before anything is sent, and a half-deleted one reads
+ * as an ordinary sentence rather than a broken reference.
+ */
+function Composer({
+  documents,
+  busy,
+  onAsk,
+}: {
+  documents: DocumentSummary[];
+  busy: boolean;
+  onAsk: (question: string) => void;
+}) {
+  const box = useRef<HTMLInputElement>(null);
+  const [text, setText] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  const [active, setActive] = useState(0);
+
+  const mention = dismissed ? null : mentionQuery(text, caret);
+  const matches = mention ? suggest(documents, mention.query) : [];
+  const open = matches.length > 0;
+  // Clamped rather than reset, so deleting a character cannot leave the
+  // highlight pointing past the end of a list that just got shorter.
+  const highlighted = Math.min(active, matches.length - 1);
+
+  function pick(document: DocumentSummary) {
+    if (!mention) return;
+    const applied = applyMention(text, mention, document.label);
+    setText(applied.text);
+    setDismissed(true);
+    // After React writes the value back, or the browser parks the caret at the
+    // end of the box and the rest of the sentence gets typed in the wrong place.
+    requestAnimationFrame(() => {
+      box.current?.focus();
+      box.current?.setSelectionRange(applied.caret, applied.caret);
+      setCaret(applied.caret);
+    });
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : matches.length - 1;
+      setActive((highlighted + step) % matches.length);
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      // Enter picks instead of sending. The sentence is still being written --
+      // submitting it here is the one thing the user cannot have meant.
+      event.preventDefault();
+      pick(matches[highlighted]);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setDismissed(true);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!text.trim() || busy) return;
+        onAsk(text);
+        setText("");
+      }}
+      className="relative flex gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-800"
+    >
+      {open && (
+        <ul
+          id="mention-menu"
+          role="listbox"
+          // The click would otherwise blur the box first, and pick() would have
+          // no caret left to insert at.
+          onMouseDown={(event) => event.preventDefault()}
+          className="absolute bottom-full left-0 z-10 mb-2 max-h-64 w-80 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+        >
+          {matches.map((document, index) => (
+            <li key={document.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={index === highlighted}
+                onClick={() => pick(document)}
+                onMouseEnter={() => setActive(index)}
+                className={`block w-full px-3 py-1.5 text-left ${
+                  index === highlighted ? "bg-neutral-100 dark:bg-neutral-800" : ""
+                }`}
+              >
+                <span className="text-sm">{document.label}</span>
+                {identity(document) && (
+                  <span className="block truncate text-xs text-neutral-500">
+                    {identity(document)}
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <input
+        ref={box}
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value);
+          setCaret(event.target.selectionStart ?? event.target.value.length);
+          setDismissed(false);
+          setActive(0);
+        }}
+        // Fires when the caret moves without the text changing -- clicking back
+        // into a mention that was already typed past has to reopen the menu.
+        //
+        // Guarded on the value, because a selection event can arrive after the
+        // text it described is gone: select the whole box and type over it, and
+        // the late event reports the old selection's caret and closes a menu
+        // the typing had just opened. Observed with a triple-click.
+        onSelect={(event) => {
+          if (event.currentTarget.value === text) {
+            setCaret(event.currentTarget.selectionStart ?? 0);
+          }
+        }}
+        onKeyDown={onKeyDown}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="mention-menu"
+        aria-autocomplete="list"
+        placeholder="What skills am I missing for Job #1?  (type / to pick a role)"
+        className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-950"
+      />
+      <button
+        type="submit"
+        disabled={busy || !text.trim()}
+        className="rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+      >
+        Ask
+      </button>
+    </form>
   );
 }
 
@@ -110,8 +252,17 @@ function DocumentList({ documents }: { documents: DocumentSummary[] }) {
     <ul className="space-y-1 text-sm">
       {documents.map((document) => (
         <li key={document.id} className="flex justify-between gap-2">
-          <span className={document.kind === "resume" ? "font-medium" : undefined}>
-            {document.label}
+          {/* The identity is the point of the line: this sidebar is where you
+              learn that Job #3 is Afficiency before typing "/" in the box. */}
+          <span className="min-w-0">
+            <span className={document.kind === "resume" ? "font-medium" : undefined}>
+              {document.label}
+            </span>
+            {identity(document) && (
+              <span className="block truncate text-xs text-neutral-500">
+                {identity(document)}
+              </span>
+            )}
           </span>
           <span className="text-neutral-500">{document.chunks}</span>
         </li>
