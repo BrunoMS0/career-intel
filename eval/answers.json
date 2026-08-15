@@ -1,0 +1,349 @@
+{
+ "retrieval:llm-rag-job4": {
+  "text": "You have documented experience working with LLMs for Job #4's requirements, but neither your resume nor the job posting mentions RAG.\n\n- OpenAI Function Calling (GPT-4o mini) implemented for intent classification [My resume — Co-Founder & Tech Lead].\n- Google Gemini (gemini-2.5-flash) integrated for AI-generated executive summaries [My resume — Fullstack Engineer].\n- LLM agent integration in production systems to replace manual processes [My resume — S U M M A R Y].\n- RAG experience is not mentioned in your resume, nor is RAG explicitly listed as a requirement for the role [Job #4 — Experience].",
+  "refused": false,
+  "sections": [
+   "Job #4 — Experience",
+   "Job #4 — Responsibilities",
+   "Job #4 — Agentic AI Engineer",
+   "My resume — Co-Founder & Tech Lead",
+   "Job #4 — About Kargo",
+   "My resume — S U M M A R Y",
+   "My resume — Fullstack Engineer",
+   "My resume — Software Engineer"
+  ],
+  "chars": 4676
+ },
+ "retrieval:missing-job3": {
+  "text": "You are missing several specific backend, tooling, and GenAI skills required for Job #3.\n\n- Flask API development [Job #3 — Technical Skills / Exposure], whereas your backend experience covers Node.js, .NET Core, and Azure Functions [My resume — T E C H N I C A L S K I L L S].\n- Microsoft Copilot Studio [Job #3 — Technical Skills / Exposure], which is absent from your AI and automation tools [My resume — T E C H N I C A L S K I L L S].\n- RAG, vector databases, embeddings, and fine-tuning concepts [Job #3 — Technical Skills / Exposure], which are not mentioned in your AI background [My resume — T E C H N I C A L S K I L L S].\n- Azure DevOps [Job #3 — Technical Skills / Exposure], while your stated CI/CD experience is with GitHub Actions [My resume — T E C H N I C A L S K I L L S].",
+  "refused": false,
+  "sections": [
+   "Job #3 — Desired Competencies",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #3 — Education",
+   "My resume — T E C H N I C A L S K I L L S",
+   "My resume — Data Analytics",
+   "My resume — Software Engineer",
+   "My resume — S U M M A R Y"
+  ],
+  "chars": 5456
+ },
+ "retrieval:comp-location-job1": {
+  "text": "Job #1 is located in San Francisco and offers a base salary of $180,000 to $300,000 plus benefits and equity [Job #1 — Overview].\n\n- Base salary: $180,000 – $300,000 plus benefits and equity [Job #1 — Overview].\n- Location: San Francisco [Job #1 — Overview].\n- Work arrangement: In-office 4–5 days/week with hybrid flexibility [Job #1 — Overview].",
+  "refused": false,
+  "sections": [
+   "Job #1 — Compensation Notes",
+   "Job #1 — Overview",
+   "Job #1 — Nice to Have",
+   "Job #1 — Required",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Developer",
+   "My resume — Fullstack Engineer",
+   "My resume — Data Analytics"
+  ],
+  "chars": 4124
+ },
+ "retrieval:missing-job3-es": {
+  "text": "Te faltan algunas tecnologías y competencias específicas de backend, inteligencia artificial y DevOps requeridas para el puesto.\n\n- **Flask API development**, requerido en backend y ausente en tu perfil [Job #3 — Technical Skills / Exposure], [My resume — T E C H N I C A L S K I L L S].\n- **Microsoft Copilot Studio**, solicitado en herramientas de IA y no listado en tu experiencia [Job #3 — Technical Skills / Exposure], [My resume — T E C H N I C A L S K I L L S].\n- **RAG, bases de datos vectoriales, embeddings y fine-tuning**, requeridos en el área de GenAI y no especificados en tu currículum [Job #3 — Technical Skills / Exposure], [My resume — T E C H N I C A L S K I L L S].\n- **Azure DevOps**, demandado en Cloud & DevOps mientras que tu perfil indica GitHub Actions [Job #3 — Technical Skills / Exposure], [My resume — T E C H N I C A L S K I L L S].",
+  "refused": false,
+  "sections": [
+   "Job #3 — Desired Competencies",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #3 — Education",
+   "My resume — T E C H N I C A L S K I L L S",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Developer",
+   "My resume — Data Analytics"
+  ],
+  "chars": 5427
+ },
+ "retrieval:redmuqui": {
+  "text": "At RedMuqui, you developed the frontend, data visualizations, authentication flow, and AI features for a multi-module NGO platform [My resume — Fullstack Engineer].\n\n- Full frontend using Next.js 16 App Router, React 19, and TypeScript with 3-tier hierarchies, role-based gates, and dashboards [My resume — Fullstack Engineer].\n- Custom SVG choropleth map of Peru built from GeoJSON with a hand-rolled Mercator projection rendering 25 departments [My resume — Fullstack Engineer].\n- JWT authentication system using a single-flight token refresh pattern via an Axios interceptor [My resume — Fullstack Engineer].\n- Google Gemini (gemini-2.5-flash) integration for AI-generated executive summaries with configurable retry logic and template fallbacks [My resume — Fullstack Engineer].",
+  "refused": false,
+  "sections": [
+   "My resume — Fullstack Engineer",
+   "My resume — Co-Founder & Tech Lead",
+   "My resume — Fullstack Developer",
+   "My resume — T E C H N I C A L S K I L L S",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #6 — Build (fast) with AI",
+   "Job #3 — Application Development",
+   "Job #2 — Nice to Have",
+   "Job #5 — React, Postgres, Vercel, Supabase (and more as they grow)",
+   "Job #5 — Passionate Builders",
+   "Job #2 — Job Requirements",
+   "Job #5 — What You'll Build",
+   "Job #2 — Key Responsibilities",
+   "Job #1 — Required",
+   "Job #6 — Problem / Opportunity Discovery",
+   "Job #1 — What You'll Do",
+   "Job #1 — Nice to Have",
+   "Job #4 — Experience",
+   "Job #4 — Responsibilities",
+   "Job #4 — About Kargo"
+  ],
+  "chars": 13377
+ },
+ "retrieval:remote-jobs": {
+  "text": "Only Job #6 is explicitly listed as a remote position.\n\n- Job #6 specifies a location of Remote and operates as a remote-first company [Job #6 — Overview] [Job #6 — About Newpage Solutions].\n- Job #1 is located in San Francisco and requires working in-office 4–5 days per week with hybrid flexibility [Job #1 — Overview].\n- Job #3 includes provided work-from-home equipment but does not state whether the role itself is remote [Job #3 — Benefits] [Job #3 — Company Description].\n- Job #5 explicitly lists its location as not specified [Job #5 — AI Engineer].",
+  "refused": false,
+  "sections": [
+   "Job #6 — Overview",
+   "Job #6 — What We Offer",
+   "Job #2 — Job Requirements",
+   "Job #1 — Overview",
+   "Job #3 — Benefits",
+   "Job #6 — About Newpage Solutions",
+   "Job #3 — Company Description",
+   "Job #3 — Education",
+   "Job #5 — AI Engineer",
+   "Job #1 — Compensation Notes",
+   "Job #5 — Requirements",
+   "Job #2 — Requirements",
+   "Job #4 — Equal Opportunity Statement",
+   "Job #1 — Nice to Have",
+   "Job #4 — Responsibilities",
+   "Job #4 — Agentic AI Engineer",
+   "Job #5 — React, Postgres, Vercel, Supabase (and more as they grow)",
+   "Job #2 — Benefits",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Engineer",
+   "My resume — Data Analytics",
+   "My resume — Fullstack Developer"
+  ],
+  "chars": 9289
+ },
+ "retrieval:pay-job2": {
+  "text": "Job #2 pays a compensation of $120,000 – $155,000 [Job #2 — Mid-Level AI Product / Creative-Tools Engineer].\n\n- Stock options [Job #2 — Benefits].\n- 401k plan [Job #2 — Benefits].\n- Equipment budget and learning allowance [Job #2 — Benefits].\n- Health, dental, and vision coverage [Job #2 — Benefits].",
+  "refused": false,
+  "sections": [
+   "Job #2 — Benefits",
+   "Job #2 — Job Requirements",
+   "Job #2 — Mid-Level AI Product / Creative-Tools Engineer",
+   "Job #2 — How You Will Grow Here",
+   "My resume — Software Engineer",
+   "My resume — Data Analytics",
+   "My resume — Founding Engineer & Tech Lead",
+   "My resume — Overview"
+  ],
+  "chars": 4075
+ },
+ "retrieval:summarize": {
+  "text": "You are a fullstack engineer with over three years of experience developing production web applications, microservices, and AI integrations [My resume — S U M M A R Y].\n\n- Next.js 16 and React 19 frontend architecture at RedMuqui, featuring custom GeoJSON mapping, JWT auth interceptors, and Google Gemini integration [My resume — Fullstack Engineer].\n- Azure Functions modernization and Python automated testing at PROTECSO, reducing manual operational load by 80% [My resume — Software Engineer].\n- Five .NET Core microservices and Next.js interfaces at SINERGIA SOLUTIONS, cutting LCP load times by 30% [My resume — Fullstack Developer].\n- Production ownership of platforms handling 25K+ monthly messages for 20+ clients, including two co-founded products [My resume — S U M M A R Y].",
+  "refused": false,
+  "sections": [
+   "My resume — S U M M A R Y",
+   "My resume — Fullstack Developer",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Engineer",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #2 — How You Will Grow Here",
+   "Job #3 — Experience",
+   "Job #5 — React, Postgres, Vercel, Supabase (and more as they grow)",
+   "Job #2 — Job Requirements",
+   "Job #4 — Experience",
+   "Job #6 — Build (fast) with AI",
+   "Job #2 — Requirements",
+   "Job #5 — Customer Obsessed",
+   "Job #5 — Velocity Driven",
+   "Job #6 — Required",
+   "Job #6 — What We Offer",
+   "Job #1 — Nice to Have",
+   "Job #1 — Required",
+   "Job #1 — Compensation Notes",
+   "Job #4 — Equal Opportunity Statement",
+   "Job #4 — About Kargo"
+  ],
+  "chars": 14077
+ },
+ "retrieval:good-fit": {
+  "text": "You are a particularly strong match for Job #2 and Job #5, while facing specific gaps in formal degree requirements and specialized evaluation experience for the others.\n\n- Job #2 aligns closely with your 3+ years of experience, Next.js, React, TypeScript, Node.js, and Claude Code experience [Job #2 — Requirements] [Job #2 — Job Requirements] [My resume — S U M M A R Y] [My resume — T E C H N I C A L S K I L L S].\n- Job #5 fits your fullstack background building customer-facing products with React, TypeScript, Supabase, PostgreSQL, and LLM APIs [Job #5 — Requirements] [Job #5 — React, Postgres, Vercel, Supabase (and more as they grow)] [My resume — T E C H N I C A L S K I L L S] [My resume — Fullstack Engineer].\n- Education credentials required by Job #3, Job #4, and Job #6 demand technical degrees [Job #3 — Education] [Job #4 — Experience] [Job #6 — Required], but your resume excerpts do not state your education history.\n- Job #1 requires large-scale evaluation harnesses, prompt evals at scale, and model fine-tuning [Job #1 — About the Role] [Job #1 — Required], whereas your background highlights API-level integration and fullstack development [My resume — S U M M A R Y] [My resume — Fullstack Engineer].",
+  "refused": false,
+  "sections": [
+   "Job #3 — Technical Skills / Exposure",
+   "Job #3 — Education",
+   "Job #1 — Nice to Have",
+   "Job #2 — Job Requirements",
+   "Job #5 — Requirements",
+   "Job #1 — About the Role",
+   "Job #1 — Required",
+   "Job #5 — Customer Obsessed",
+   "Job #5 — React, Postgres, Vercel, Supabase (and more as they grow)",
+   "Job #2 — How You Will Grow Here",
+   "Job #2 — Requirements",
+   "Job #6 — Build (fast) with AI",
+   "Job #6 — Overview",
+   "Job #6 — Required",
+   "Job #4 — Experience",
+   "Job #4 — Equal Opportunity Statement",
+   "Job #4 — About Kargo",
+   "My resume — Software Engineer",
+   "My resume — T E C H N I C A L S K I L L S",
+   "My resume — S U M M A R Y",
+   "My resume — Fullstack Engineer"
+  ],
+  "chars": 14243
+ },
+ "retrieval:learn-next": {
+  "text": "To increase your competitiveness across these roles, you should focus on mastering advanced agent orchestration, vector retrieval, browser automation, and AI evaluation tooling.\n\n- Agent orchestration frameworks like LangGraph, AutoGen, or Claude Agent SDK to build production-grade agentic applications [Job #6 — Build (fast) with AI].\n- Vector databases and retrieval techniques such as Pinecone, Chroma, Weaviate, pgvector, and hybrid search [Job #6 — Build (fast) with AI], [Job #3 — Technical Skills / Exposure].\n- Browser automation tools such as Playwright or Selenium to enable AI agents to navigate websites and execute complex tasks [Job #4 — Responsibilities].\n- AI evaluation tooling and prompt engineering frameworks like Braintrust and AI JSX to measure and improve model output quality [Job #1 — Nice to Have], [Job #1 — Required].",
+  "refused": false,
+  "sections": [
+   "Job #5 — React, Postgres, Vercel, Supabase (and more as they grow)",
+   "Job #2 — How You Will Grow Here",
+   "Job #3 — Technical Skills / Exposure",
+   "My resume — T E C H N I C A L S K I L L S",
+   "Job #1 — Nice to Have",
+   "Job #6 — Opportunities for Learning and Development",
+   "Job #2 — Job Requirements",
+   "Job #2 — Requirements",
+   "Job #3 — Application Development",
+   "Job #6 — Build (fast) with AI",
+   "Job #1 — Required",
+   "Job #5 — Velocity Driven",
+   "Job #5 — Customer Obsessed",
+   "My resume — Software Engineer",
+   "My resume — Data Analytics",
+   "My resume — Fullstack Developer",
+   "Job #4 — Experience",
+   "Job #1 — What You'll Do",
+   "Job #4 — Responsibilities",
+   "Job #4 — About Kargo"
+  ],
+  "chars": 12522
+ },
+ "retrieval:roles-common": {
+  "text": "The job postings all center on building and shipping production software integrated with modern AI and LLM capabilities.\n\n- AI and LLM integration into software features, services, or agentic workflows [Job #1 — About the Role] [Job #2 — Key Responsibilities] [Job #3 — Application Development] [Job #4 — Responsibilities] [Job #5 — Requirements] [Job #6 — Required].\n- Software development utilizing Python, TypeScript, or modern web frameworks [Job #1 — Required] [Job #2 — Requirements] [Job #3 — Application Development] [Job #4 — Experience] [Job #5 — Requirements] [Job #6 — Build (fast) with AI].\n- API and service integration across digital platforms, backend microservices, and external systems [Job #2 — Key Responsibilities] [Job #3 — Data & Integration] [Job #4 — Responsibilities] [Job #6 — Build (fast) with AI].\n- Delivery of production-grade software features and scalable architectures for end users [Job #1 — About the Role] [Job #2 — Requirements] [Job #3 — Application Development] [Job #4 — Experience] [Job #5 — Customer Obsessed] [Job #6 — Required].",
+  "refused": false,
+  "sections": [
+   "Job #1 — Nice to Have",
+   "Job #4 — Responsibilities",
+   "Job #3 — Data & Integration",
+   "Job #1 — About the Role",
+   "Job #1 — Required",
+   "Job #5 — AI Zealots",
+   "Job #3 — Education",
+   "Job #5 — Requirements",
+   "Job #5 — Customer Obsessed",
+   "Job #2 — Job Requirements",
+   "Job #6 — Build (fast) with AI",
+   "Job #3 — Application Development",
+   "Job #4 — Experience",
+   "Job #6 — Required",
+   "Job #2 — Requirements",
+   "Job #2 — Key Responsibilities",
+   "Job #6 — Opportunities for Learning and Development",
+   "Job #4 — About Kargo",
+   "My resume — Founding Engineer & Tech Lead",
+   "My resume — Fullstack Developer",
+   "My resume — Fullstack Engineer",
+   "My resume — S U M M A R Y"
+  ],
+  "chars": 13311
+ },
+ "retrieval:best-fit": {
+  "text": "Job #4 fits you best based on your experience building production web platforms and implementing agentic workflows.\n\n- Production software experience: You have 3+ years building production platforms [My resume — S U M M A R Y], matching the requirement for 3+ years of production systems experience [Job #4 — Experience].\n- Agentic workflow development: You build multi-tool AI pipelines using Claude Code, custom skills, and MCP [My resume — Data Analytics], aligning with the need for 1+ years building agentic workflows with tool calling [Job #4 — Experience], [Job #4 — Responsibilities].\n- Python programming: You possess Python 3.10+ skills [My resume — T E C H N I C A L S K I L L S], fulfilling the requirement for strong Python programming skills [Job #4 — Experience].\n- API and third-party integrations: You have built RESTful APIs and automated integration pipelines [My resume — Fullstack Developer], [My resume — Data Analytics], directly satisfying the requirement to integrate agents with APIs and SaaS platforms [Job #4 — Experience], [Job #4 — Responsibilities].",
+  "refused": false,
+  "sections": [
+   "Job #5 — AI Zealots",
+   "Job #5 — Customer Obsessed",
+   "Job #2 — Job Requirements",
+   "Job #5 — Passionate Builders",
+   "Job #3 — Application Development",
+   "Job #6 — Build (fast) with AI",
+   "Job #2 — How You Will Grow Here",
+   "Job #3 — AI & Prompt Engineering",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #1 — About the Role",
+   "Job #6 — Problem / Opportunity Discovery",
+   "Job #1 — Required",
+   "Job #1 — Nice to Have",
+   "Job #6 — Opportunities for Learning and Development",
+   "Job #2 — Nice to Have",
+   "Job #4 — Experience",
+   "My resume — S U M M A R Y",
+   "Job #4 — Responsibilities",
+   "My resume — Fullstack Developer",
+   "My resume — Data Analytics",
+   "My resume — T E C H N I C A L S K I L L S",
+   "Job #4 — Equal Opportunity Statement"
+  ],
+  "chars": 14205
+ },
+ "retrieval:compare-all": {
+  "text": "The six job postings differ across role focus, work location, employment type, and compensation transparency.\n\n- Work arrangements range from in-office hybrid in San Francisco at Gamma [Job #1 — Overview] and San Francisco at Kargo [Job #4 — Agentic AI Engineer], to fully remote contract work at Newpage [Job #6 — Overview] and an NYC office at Afficiency [Job #3 — Company Description].\n- Compensation disclosure spans an explicit $180,000–$300,000 base salary at Gamma [Job #1 — Overview], undisclosed salary with equity at Afficiency [Job #3 — Benefits] and Golden Analytics [Job #5 — AI Engineer], and undisclosed terms at Kargo [Job #4 — Agentic AI Engineer].\n- Technical requirements contrast specialized prompt and evaluation systems at Gamma [Job #1 — What You'll Do] and Python agent workflows at Kargo [Job #4 — Experience] with fullstack React/Python/SQL stacks at Afficiency [Job #3 — Technical Skills / Exposure] and Node.js with async UI at Job #2 [Job #2 — Job Requirements].\n- Seniority and structure include a contract position at Newpage [Job #6 — Overview], a designated junior growth role on a small team at Job #2 [Job #2 — How You Will Grow Here], and full-time engineering roles at Gamma and Kargo [Job #1 — Overview], [Job #4 — Agentic AI Engineer].",
+  "refused": false,
+  "sections": [
+   "Job #2 — How You Will Grow Here",
+   "Job #3 — Benefits",
+   "Job #2 — Benefits",
+   "Job #1 — Compensation Notes",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #1 — Overview",
+   "Job #2 — Job Requirements",
+   "Job #4 — Equal Opportunity Statement",
+   "Job #3 — Company Description",
+   "Job #6 — Opportunities for Learning and Development",
+   "Job #1 — What You'll Do",
+   "Job #5 — AI Engineer",
+   "Job #6 — What We Offer",
+   "Job #5 — Velocity Driven",
+   "Job #6 — Overview",
+   "Job #5 — Why Join Us",
+   "My resume — S U M M A R Y",
+   "My resume — Founding Engineer & Tech Lead",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Developer",
+   "Job #4 — Experience",
+   "Job #4 — Agentic AI Engineer"
+  ],
+  "chars": 10795
+ },
+ "retrieval:system-design-prep": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ },
+ "retrieval:rust-2026": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ },
+ "retrieval:negotiate-raise": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ },
+ "retrieval:capital-france": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ },
+ "retrieval:carbonara": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ },
+ "retrieval:capital-france-es": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ },
+ "retrieval:injection-poem": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ },
+ "retrieval:recruiter-opinion": {
+  "text": "That question is outside the documents I have. I can only answer from the indexed resume and job postings — ask about your fit for a role, what a posting requires, or what it says about pay, location or process.",
+  "refused": true,
+  "sections": [],
+  "chars": 0
+ }
+}

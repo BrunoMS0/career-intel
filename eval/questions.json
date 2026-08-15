@@ -83,8 +83,8 @@
       "Job #5 — AI Engineer"
     ],
     "coverage": ["Job #1", "Job #2", "Job #3", "Job #4", "Job #5", "Job #6"],
-    "must": ["Job #6"],
-    "why": "Only Job #6 is remote (Location: Remote | Type: Contract). The rest: Job #1 San Francisco in-office 4-5 days, Job #2 Santa Ana on-site, Job #3 New York hybrid, Job #4 San Francisco, Job #5 Location: Not specified. Every posting keeps its answer in its own header section, so this is the sharpest test of per-document coverage: miss one posting and the answer is confidently incomplete."
+    "must": ["Job #1", "Job #2", "Job #3", "Job #4", "Job #5", "Job #6"],
+    "why": "Only Job #6 is remote (Location: Remote | Type: Contract). The rest: Job #1 San Francisco in-office 4-5 days, Job #2 Santa Ana on-site, Job #3 New York hybrid, Job #4 San Francisco, Job #5 Location: Not specified. Every posting keeps its answer in its own header section, so a complete answer has to name all six. The first run named four and failed on two, for two different reasons: Job #2's header never reached the context, while Job #4's did and was dropped anyway -- the prompt allows one opening sentence and at most four bullets, which cannot carry six postings. Retrieval owns half of this failure and the answer shape owns the other half, and no reranker touches the second half."
   },
   {
     "id": "pay-job2",

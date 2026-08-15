@@ -12,7 +12,8 @@
     "compare": "node --env-file=.env scripts/compare-parsers.ts",
     "chunks": "node --env-file=.env scripts/inspect-chunks.ts",
     "retrieve": "node --env-file=.env scripts/inspect-query.ts",
-    "eval": "node --env-file=.env scripts/eval-retrieval.ts"
+    "eval": "node --env-file=.env scripts/eval-retrieval.ts",
+    "answers": "node --env-file=.env scripts/eval-answers.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.43",
