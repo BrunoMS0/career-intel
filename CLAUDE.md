@@ -497,20 +497,21 @@ measured against a corpus of PDFs. That corpus has since been replaced twice and
 is about to be replaced a third time, so some of them are stale in a specific,
 listed way.
 
-**The documents become markdown, and PDF support goes away entirely.** The
-reasoning is the user's and it is sound: a RAG like this one is an internal tool,
-the assignment asks for the resume and the postings to be *uploaded* and then
-live in the system, so the storage format is a choice rather than a constraint —
-and PDF is the worst available choice for it. Removing the parser removes, at
-once, the hosted service the user's real resume was being uploaded to, a
-language model rewriting documents on the way in (it translated a posting to
-Spanish once and silently dropped a location requirement another time), the
-irreproducibility of an ingest, and the dependency on being online.
+**PDFs stayed, and the parse got good enough to keep them.** A markdown-only
+corpus was written and nearly adopted -- the reasoning was sound, since the
+assignment only asks for documents to be uploaded and never says in what format.
+What changed it was measuring the alternative properly: `parse_page_with_agent`
+with a structure instruction returns zero unlabeled text, 100% fidelity and real
+heading depth on all eight documents, at 1, 2, 3, 4 and 5 pages. The
+hand-written markdown was not better; its `###` per skill group fragmented Job
+#3 into six sections and cost retrieval two of three expected sections, which
+the parser's coarser shape does not.
 
-The eight markdown documents carry YAML frontmatter with 17 declared fields —
-company, location, work_mode, salary_min/max, seniority, primary_stack — and
-real heading depth, `#` through `###`. Both of those are new capabilities the
-code does not use yet.
+The corpus is therefore eight PDFs, 72 chunks over 70 sections, with Job #7
+(a five-page e-commerce posting) added to widen the field and the resume
+replaced by a single-page version. That last one is not cosmetic: the two-page
+version lost its sixth employer to a page break and filed that content under the
+fifth employer's name.
 
 ### What a corpus change invalidates
 
@@ -527,43 +528,45 @@ Every one of these, every time, and nothing detects most of it:
   constant is fitted to a corpus and has to be refitted with it. On that corpus
   the correct value was 0.38; on the markdown one it is unmeasured.
 
-### Phase 6 — markdown only
+### Phase 6 — a baseline on the corpus that now exists
 
-Delete the PDF path: `lib/pdf.ts`, `lib/pdf-llama.ts`, `compareFidelity()`,
-`pnpm inspect`, `pnpm compare`, the `llama-cloud-services` and `unpdf`
-dependencies, and whatever in `lib/chunk.ts` only existed to back them.
-`splitBySize`, `enrich` and `unlabeledShare` stay; `chunkDocument()` and its
-heading heuristics have no remaining caller.
+Nothing here is a design decision; all of it is bookkeeping the corpus change
+forced, and it has to happen before anything is tuned against numbers that no
+longer describe the index.
 
-Ingest the eight markdown files, rewrite the expectations to the new section
-names, refit the threshold. Deliverable: a fresh baseline on the new corpus with
-the chunker exactly as it is, so the next phase's changes are measured against a
-known point rather than against a moving one.
+Delete both caches, rewrite the 31 expectations to the new section names, remeasure
+each question's `recorded` value, and refit `WEAK_DISTANCE`. Then run both
+halves and write down what the corpus scores now.
+
+Two traps. Seven section names contain an em-dash or a pipe of their own
+(`Data Analytics | March 2026 – Present`, `AI Engineer — Core AI Systems`);
+evidence keys compare whole strings so they work, but anything that splits on
+`" — "` breaks. And `remote-jobs` and the other breadth questions now have seven
+postings to cover rather than six, so their expectations grow.
 
 ### Phase 7 — precision
 
 The goal changes here. Everything so far measured whether the needed section
-*arrives*; nothing measures how much arrives that was not needed.
+*arrives*; nothing measures how much arrives that was not needed, and with eight
+documents in play every unscoped question now pulls three chunks from each of
+seven postings whether or not they have anything to do with it.
 
-1. **Add the metric first**, so the two changes below have a before. The honest
-   cheap definition: sections retrieved from documents the question does not
-   need. `coverage` already names the documents each question does need, so
-   everything else is noise and nothing new has to be labelled.
-2. **Heading depth.** `lib/chunk-markdown.ts` flattens `#`, `##` and `###`
-   alike, and its canary test fails the day a document arrives with real `##` —
-   that day is now. This is the deferred work, and the cost of not doing it is
-   measured: Afficiency's technology table went from one 2348-character section
-   to six of 49 to 310 characters, six slots competing for a budget of four, and
-   `missing-job3` fell from 2 of 3 expected sections to 1 of 3 with Back-End,
-   the one holding Flask, at rank 10.
-3. **Frontmatter into columns.** The fields are declared by the author rather
-   than inferred by anything, which is what makes this safe where extracting
-   skills was not. It also turns the one failure retrieval could never fix into
-   a `where`: "which of these jobs are remote?" fails in *both* the retrieval
-   and whole-corpus variants, and `work_mode: remote` answers it exactly.
+1. **Add the metric first**, so the change below has a before. The honest cheap
+   definition: sections retrieved from documents the question does not need.
+   `coverage` already names the documents each question does need, so everything
+   else is noise and nothing new has to be labelled.
+2. **Then narrow the field.** The measured fact this rests on: for "which
+   posting talks about RAG and vector databases?" the two postings that mention
+   it ranked 1st and 2nd, and the budget handed three slots each to four
+   postings that never mention it. The search knows; the budget cannot act on it
+   because scope is decided by a literal label match before any distance is
+   computed.
 
-Measure 2 and 3 separately. Two changes in one measurement do not say which one
-worked.
+   The obvious move is to let distance choose the documents. It is also the
+   shape of reasoning that lost twice already -- see the spread and the relative
+   band above -- so it is a measurement, not a plan. And `remote-jobs`,
+   `compare-all` and `roles-common` need *every* posting, so whatever rule is
+   tried has to keep them whole. That is the real constraint.
 
 ### Phase 8 — real labels, then the UI
 
