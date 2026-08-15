@@ -4,7 +4,11 @@ import { basename, join } from "node:path";
 import { chunkDocument, unlabeledShare, type Chunk } from "../lib/chunk.ts";
 import { chunkMarkdown } from "../lib/chunk-markdown.ts";
 import { extractOrderedText } from "../lib/pdf.ts";
-import { compareFidelity, extractOrderedText as llamaExtract } from "../lib/pdf-llama.ts";
+import {
+  compareFidelity,
+  extractOrderedText as llamaExtract,
+  unpromotedLabels,
+} from "../lib/pdf-llama.ts";
 
 /**
  * Runs both parsers over the same documents and prints what each one produced,
@@ -90,32 +94,14 @@ async function llamaCached(path: string): Promise<string> {
  * to promote it, and it is the shape the sixth employer came back as while the
  * other five became headings.
  *
- * Lines close under a heading do not count. A promoted entry legitimately
- * carries a line or two of emphasised detail beneath it -- a date range, an
- * employer, a location -- and counting those made a resume with correct
- * structure score 18 orphans while a resume collapsed into one section scored
- * 16. The metric was ranking the good parse below the broken one.
+ * The orphan count itself lives in lib/pdf-llama.ts, because an ingest warns on
+ * it too and a copy here would drift from the one users are told about.
  */
 function structure(markdown: string) {
   const level = (n: number) =>
     (markdown.match(new RegExp(`^#{${n}}\\s+\\S`, "gm")) ?? []).length;
 
-  let sinceHeading = 99;
-  let orphans = 0;
-  for (const raw of markdown.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (/^#{1,6}\s+\S/.test(line)) {
-      sinceHeading = 0;
-      continue;
-    }
-    if (sinceHeading > 2 && line.length <= 90 && /^(\*{1,3}[^*\n]+\*{1,3}\s*)+$/.test(line)) {
-      orphans++;
-    }
-    sinceHeading++;
-  }
-
-  return { levels: [level(1), level(2), level(3)], orphans };
+  return { levels: [level(1), level(2), level(3)], orphans: unpromotedLabels(markdown) };
 }
 
 function summarize(chunks: Chunk[]) {

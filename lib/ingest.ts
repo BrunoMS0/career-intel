@@ -4,7 +4,13 @@ import { enrich, unlabeledShare } from "./chunk.ts";
 import { chunkMarkdown } from "./chunk-markdown.ts";
 import { sql } from "./db.ts";
 import { embedForIndex, toVector } from "./embedding.ts";
-import { compareFidelity, extractOrderedText } from "./pdf-llama.ts";
+import {
+  compareFidelity,
+  extractOrderedText,
+  PARSE_MODE,
+  STRUCTURE_INSTRUCTION,
+  unpromotedLabels,
+} from "./pdf-llama.ts";
 import { extractOrderedText as extractVerbatim } from "./pdf.ts";
 
 export type DocumentKind = "resume" | "job";
@@ -53,7 +59,9 @@ export async function ingest(input: {
 }) {
   const data = new Uint8Array(await input.file.arrayBuffer());
   const [markdown, verbatim] = await Promise.all([
-    extractOrderedText(data, input.file.name),
+    extractOrderedText(data, input.file.name, PARSE_MODE, {
+      system_prompt_append: STRUCTURE_INSTRUCTION,
+    }),
     extractVerbatim(data).catch(() => ""),
   ]);
 
@@ -63,6 +71,7 @@ export async function ingest(input: {
   }
 
   const fidelity = compareFidelity(verbatim, markdown);
+  const orphans = unpromotedLabels(markdown);
 
   const embeddings = await embedForIndex(chunks.map((chunk) => enrich(chunk, input.label)));
 
@@ -105,6 +114,21 @@ export async function ingest(input: {
       // between "something changed" and seeing "NYC" go missing.
       warnings.push(
         `The parser returned ${Math.round(fidelity.kept * 100)}% of this document's wording, so some text was dropped or rewritten. Missing: ${fidelity.missing.slice(0, 12).join(", ")}.`,
+      );
+    }
+    // The failure the fidelity check cannot see, because it loses no words: a
+    // section label left as bold body text instead of promoted to a heading.
+    // Its content then joins the previous section and is cited under that
+    // section's name, which is a wrong attribution rather than a missing one.
+    // Measured cause is a page break: a two-page resume left its sixth employer
+    // behind while a one-page version of the same resume left none.
+    //
+    // ponytail: warns on the first one. Every document in the corpus scores 0,
+    // so anything above that is signal here; raise the bar if real uploads
+    // prove noisier than the eight measured.
+    if (orphans > 0) {
+      warnings.push(
+        `${orphans} label${orphans === 1 ? "" : "s"} in this document look like section headings the parser did not recognise, most often just after a page break. Text under them is attributed to the section above instead. A single-page layout avoids it.`,
       );
     }
 
