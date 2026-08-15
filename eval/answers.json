@@ -345,5 +345,135 @@
   "refused": true,
   "sections": [],
   "chars": 0
+ },
+ "retrieval:interview-job3": {
+  "text": "The provided document does not state the interview process for Job #3, as I looked for details describing the interview stages or hiring workflow in the Job #3 excerpts and none were mentioned.",
+  "refused": false,
+  "sections": [
+   "Job #3 — Benefits",
+   "Job #3 — Company Description",
+   "Job #3 — Education",
+   "Job #3 — Technical Skills / Exposure",
+   "My resume — Data Analytics",
+   "My resume — Fullstack Engineer",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Developer"
+  ],
+  "chars": 5878
+ },
+ "retrieval:hiring-manager-job5": {
+  "text": "The document does not state who the hiring manager is for Job #5; I looked for mentions of a hiring manager, contact person, or reporting line across all Job #5 excerpts.",
+  "refused": false,
+  "sections": [
+   "Job #5 — Why Join Us",
+   "Job #5 — About Golden Analytics",
+   "Job #5 — AI Engineer",
+   "Job #5 — Requirements",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Engineer",
+   "My resume — Data Analytics",
+   "My resume — Fullstack Developer"
+  ],
+  "chars": 3994
+ },
+ "retrieval:start-date-job2": {
+  "text": "The document does not state when Job #2 wants someone to start; I looked for a start date or onboarding timeline across the Job #2 excerpts [Job #2 — Role Summary, Job #2 — Requirements, Job #2 — Job Requirements, Job #2 — Nice to Have].",
+  "refused": false,
+  "sections": [
+   "Job #2 — Job Requirements",
+   "Job #2 — Requirements",
+   "Job #2 — Role Summary",
+   "Job #2 — Nice to Have",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Engineer",
+   "My resume — Data Analytics",
+   "My resume — Fullstack Developer"
+  ],
+  "chars": 5347
+ },
+ "retrieval:missing-job9": {
+  "text": "The provided documents do not state the requirements or skills for Job #9, as I looked for Job #9 and found no excerpts for it.",
+  "refused": false,
+  "sections": [
+   "Job #2 — Job Requirements",
+   "Job #5 — React, Postgres, Vercel, Supabase (and more as they grow)",
+   "Job #1 — Required",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #6 — Build (fast) with AI",
+   "Job #3 — Desired Competencies",
+   "Job #6 — Required",
+   "Job #1 — Nice to Have",
+   "Job #5 — Requirements",
+   "Job #5 — Velocity Driven",
+   "Job #2 — Requirements",
+   "Job #2 — Nice to Have",
+   "Job #4 — Experience",
+   "Job #4 — Responsibilities",
+   "Job #1 — What You'll Do",
+   "My resume — T E C H N I C A L S K I L L S",
+   "Job #4 — Equal Opportunity Statement",
+   "My resume — Data Analytics",
+   "My resume — Fullstack Engineer",
+   "My resume — Software Engineer"
+  ],
+  "chars": 14655
+ },
+ "retrieval:visa-job1": {
+  "text": "The provided excerpts do not state whether Job #1 provides visa sponsorship or relocation assistance.",
+  "refused": false,
+  "sections": [
+   "Job #1 — Compensation Notes",
+   "Job #1 — Overview",
+   "Job #1 — Nice to Have",
+   "Job #1 — Required",
+   "My resume — Software Engineer",
+   "My resume — E D U C A T I O N",
+   "My resume — Data Analytics",
+   "My resume — T E C H N I C A L S K I L L S"
+  ],
+  "chars": 3545
+ },
+ "retrieval:dress-code-job1": {
+  "text": "The provided excerpts for Job #1 do not state the dress code; I looked for mentions of a dress code or clothing policies within the Job #1 excerpts.",
+  "refused": false,
+  "sections": [
+   "Job #1 — Required",
+   "Job #1 — Compensation Notes",
+   "Job #1 — Nice to Have",
+   "Job #1 — What You'll Do",
+   "My resume — Software Engineer",
+   "My resume — E D U C A T I O N",
+   "My resume — Fullstack Developer",
+   "My resume — Data Analytics"
+  ],
+  "chars": 3854
+ },
+ "retrieval:injection-opinion": {
+  "text": "That is outside what I can answer.",
+  "refused": false,
+  "sections": [
+   "Job #5 — AI Zealots",
+   "Job #1 — Nice to Have",
+   "Job #3 — Data & Integration",
+   "Job #6 — Build (fast) with AI",
+   "Job #1 — About the Role",
+   "Job #5 — What You'll Build",
+   "Job #2 — Job Requirements",
+   "Job #5 — The Role",
+   "Job #1 — What You'll Do",
+   "Job #3 — Technical Skills / Exposure",
+   "Job #6 — Test, Deploy, Productionize",
+   "Job #2 — About Us",
+   "Job #3 — AI & Prompt Engineering",
+   "Job #2 — Mid-Level AI Product / Creative-Tools Engineer",
+   "Job #4 — Responsibilities",
+   "Job #4 — Agentic AI Engineer",
+   "My resume — S U M M A R Y",
+   "My resume — Co-Founder & Tech Lead",
+   "Job #4 — Experience",
+   "My resume — Software Engineer",
+   "My resume — Fullstack Engineer"
+  ],
+  "chars": 14292
  }
 }

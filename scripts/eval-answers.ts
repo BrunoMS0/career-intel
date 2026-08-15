@@ -182,12 +182,20 @@ function check(question: Question, result: Answer): string[] {
 
   // A citation naming a section the model was not shown is invented, which is
   // the one failure mode the excerpts themselves cannot cause.
-  const shown = new Set(result.sections.map(squash));
+  //
+  // Containment rather than equality, because the first run turned up a shape
+  // the format rule does not ask for and does not forbid either: four sources
+  // inside one bracket. Grading that as an invented citation would have failed
+  // a correct answer for punctuation, and section names carry commas of their
+  // own ("React, Postgres, Vercel, Supabase") so splitting on them is worse.
+  const shown = result.sections.map(squash);
   const cited = [...text.matchAll(/\[([^\]\n]+)\]/g)]
     .map((match) => match[1])
     .filter((citation) => /[—–-]/.test(citation));
   for (const citation of cited) {
-    if (!shown.has(squash(citation))) problems.push(`cites "${citation}", never shown`);
+    if (!shown.some((section) => squash(citation).includes(section))) {
+      problems.push(`cites "${citation}", never shown`);
+    }
   }
   if (question.class === "answerable" && cited.length === 0) {
     problems.push("no citations at all");
