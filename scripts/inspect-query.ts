@@ -15,11 +15,17 @@ import {
  * answer looks wrong, the reason is usually visible here first.
  *
  *   pnpm retrieve "What skills am I missing for Job #4?"
- *   pnpm retrieve --chunks "..."   both stages: the chunks that matched, then
- *                                  the sections they pulled in
- *   pnpm retrieve --rerank "..."   scores what came back with the cross-encoder
- *                                  and prints the gap between consecutive
- *                                  sections, so a cut can be judged by eye
+ *   pnpm retrieve --chunks "..."   both stages: every chunk ranked inside its
+ *                                  document with the ones kept marked, then the
+ *                                  sections they pulled in. The marks come from
+ *                                  the same call retrieve() makes, so on a
+ *                                  scoped question they show the cross-encoder's
+ *                                  choice rather than the distance ranking
+ *   pnpm retrieve --rerank "..."   scores the sections that came back and prints
+ *                                  the gap between them, so the candidate trim
+ *                                  can be judged by eye. Costs one hosted call
+ *
+ * The two combine.
  */
 const args = process.argv.slice(2);
 const verbose = args.includes("--chunks");
@@ -31,20 +37,32 @@ if (!question) {
   process.exit(1);
 }
 
-const scope = await resolveScope(question);
 console.log(`question: ${question}`);
-console.log(`scope:    ${scope.length ? scope.join(", ") : "all postings (no label named)"}\n`);
+
+// The scope comes from explainRetrieval when it runs, so the header cannot
+// report one the retriever then ignores. Without --chunks it is resolved here,
+// which is one local query and no embedding call.
+const named = (scope: readonly string[]) =>
+  `scope:    ${scope.length ? scope.join(", ") : "all postings (no label named)"}\n`;
 
 if (verbose) {
-  const { limits, chunks } = await explainRetrieval(question);
+  const { scope, limits, chunks, reranked } = await explainRetrieval(question);
 
+  console.log(named(scope));
   console.log(
     `${limits.documents} documents in play -> ${limits.perDocument} chunks each ` +
       `(${limits.resume} for the resume, which is one side of every comparison)\n`,
   );
 
-  console.log("STAGE 1 - every chunk ranked within its own document");
-  console.log("           the marked ones are inside the budget and become search hits\n");
+  console.log("STAGE 1 - every chunk ranked within its own document, nearest first");
+  console.log(
+    reranked
+      ? "           -> is what retrieve() keeps. The scope resolved, so a cross-encoder\n" +
+          "           reordered the candidates before the budget: the marks do not follow\n" +
+          "           the ranking, and a chunk 7th by distance can be kept over a 3rd.\n"
+      : "           -> is what retrieve() keeps. Nothing resolved a scope, so the budget\n" +
+          "           takes them in distance order and the marks follow the ranking.\n",
+  );
 
   let current = "";
   for (const chunk of chunks) {
@@ -60,13 +78,13 @@ if (verbose) {
   }
 
   const hits = chunks.filter((chunk) => chunk.picked);
-  const sections = new Set(hits.map((hit) => `${hit.label}|${hit.section}`));
-  console.log(
-    `\n  ${hits.length} chunks matched, landing in ${sections.size} distinct sections\n`,
-  );
+  const landed = new Set(hits.map((hit) => `${hit.label}|${hit.section}`));
+  console.log(`\n  ${hits.length} chunks kept, landing in ${landed.size} distinct sections\n`);
   console.log("STAGE 2 - each section is rejoined whole, siblings of the match included");
   console.log("           a chunk is precise enough to search with, too narrow to answer from\n");
 }
+
+if (!verbose) console.log(named(await resolveScope(question)));
 
 const sections = await retrieve(question);
 // The trim is a candidate rule, not part of the answer path. --rerank runs it

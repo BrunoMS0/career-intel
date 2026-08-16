@@ -355,8 +355,16 @@ export type RankedChunk = {
   position: number;
   chars: number;
   distance: number;
+  /** Position by distance inside its own document. */
   rank: number;
-  /** Within its document's budget, so this chunk is one of the search hits. */
+  /**
+   * This chunk is one of the search hits, meaning `retrieve()` really returns
+   * the section around it. Not the same as `rank <= budget`: on a question that
+   * resolves a scope the cross-encoder reorders the candidates first, so a chunk
+   * ranked 7th by distance can be picked and one ranked 3rd can be dropped.
+   * Computed from the same call `retrieve()` makes, not re-derived, because an
+   * inspector that disagrees with the retriever is worse than none.
+   */
   picked: boolean;
 };
 
@@ -366,13 +374,18 @@ export type RankedChunk = {
  * stages can be read on a terminal instead of inferred from the output.
  */
 export async function explainRetrieval(query: string) {
-  const scope = await resolveScope(query);
+  // NARROW, not resolveScope directly: with it off every question is unscoped
+  // and the inspector has to say so, rather than reporting a scope that the
+  // retriever then ignores.
+  const scope = NARROW ? await resolveScope(query) : [];
   const vector = toVector(await embedForQuery(query));
   const limits = await budget(scope);
+  const chosen = scope.length > 0 ? await rerankChunks(query, vector, scope, limits.perDocument) : null;
+  const picked = new Set(chosen ?? []);
 
-  const chunks = await sql<RankedChunk[]>`
+  const chunks = await sql<(RankedChunk & { id: string })[]>`
     with ranked as (${rankChunks(vector, scope, limits.perDocument)})
-    select label, kind, section, position, chars,
+    select id, label, kind, section, position, chars,
            distance::float8 as distance,
            rank::int as rank,
            (rank <= budget) as picked
@@ -380,5 +393,14 @@ export async function explainRetrieval(query: string) {
     order by label, rank
   `;
 
-  return { scope, limits, chunks };
+  return {
+    scope,
+    limits,
+    /** True when the cross-encoder chose the hits, so `rank` is not the reason. */
+    reranked: chosen !== null,
+    chunks: chunks.map((chunk) => ({
+      ...chunk,
+      picked: chosen ? picked.has(chunk.id) : chunk.picked,
+    })),
+  };
 }
