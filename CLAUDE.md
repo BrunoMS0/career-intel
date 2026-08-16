@@ -60,6 +60,11 @@ https://github.com/BrunoMS0/career-intel
   no embedding calls and both see identical numbers
 - `eval/answers.json` — every answer both variants produced, cached per question
   so an interrupted pass resumes and a finished one can be reread for free
+- `lib/rerank.ts` — the cross-encoder candidate rule: one batched call per
+  question, then the same per-document budget over the new order. Measured and
+  not adopted; `lib/retrieval.ts` does not import it
+- `eval/rerank.json` — those scores, aligned to the same snapshot as the
+  distances so both rules replay over identical numbers
 - `scripts/eval-retrieval.ts` — the retrieval half of the harness
 - `scripts/eval-answers.ts` — the generation half, and the no-retrieval variant
 - `lib/prompt.ts` — the system prompt, shared by the chat route and the harness
@@ -76,6 +81,8 @@ pnpm compare <file.pdf>...            # both parsers side by side, with fidelity
 pnpm chunks ["<label>"] [--full]      # what is actually indexed, from the db
 pnpm retrieve [--chunks] "<question>" # what a question retrieves, with distances
 pnpm eval [--verbose]                 # retrieval eval over eval/questions.json
+pnpm eval --rerank                    # + the cross-encoder as a candidate rule
+
 pnpm answers [--full] [--report]      # answer eval; --full adds the no-retrieval variant
 pnpm answers --repeat=3               # answer each question 3 times, report what flips
 docker compose exec db psql -U postgres -d career_intel
@@ -299,29 +306,127 @@ says "React". It resolves the synonym from the two full texts. Extracting skills
 into a structure would introduce the normalisation failure it was meant to
 prevent.
 
-**Reranking still deferred, but no longer for lack of a case.** `pnpm eval`
-scores 14 of the 19 expected sections. Three of the five misses survive every
-budget rule measured, because they are ordering failures rather than volume
-ones: Job #3's `Experience` ranks 9th of its 14 chunks, the resume's skills list
-6th of 10, and Job #3's header — the one holding `Location:` — 8th of 14. All
-three sit inside a top-10 net, which is exactly what a reranker is for.
+**The reranker was measured and it loses as specified — phase 7. Not
+connected.** `lib/rerank.ts` scores the bi-encoder's top 10 per document with
+Cohere `rerank-v3.5` and applies the same budget to the new order. `pnpm eval
+--rerank` caches the scores in `eval/rerank.json` aligned to the same snapshot
+as the distances, so both rules are replayed over identical numbers, nothing was
+re-embedded and neither the index nor `lib/retrieval.ts` was touched. 44 calls,
+one per question, batched across all documents because a cross-encoder scores
+each (query, passage) pair independently.
 
-The generation half then settled what those misses cost, and it is less than the
-recall number suggests. `llm-rag-job4` loses the skills list and answers
-correctly from three other resume sections, catching on its own that Job #4
-never asks for RAG. `missing-job3` loses `Job #3 — Experience` and the answer
-simply lacks the 4-years-against-3 gap while getting the four technology gaps
-right. And where evidence is missing the model does not invent: asked which
-roles are remote with Job #3's header absent, it said Job #3 "includes provided
-work-from-home equipment but does not state whether the role itself is remote"
-rather than guessing from the equipment.
+The falsifiable part was written before the run. Four sections that survived
+finer chunks, identity in the embedding and normalised section tags, each traced
+to rank 5-8 inside its own document, had to come back. **One of four did.**
 
-So a reranker would buy completeness, not correctness. And it would buy less of
-it than it looks: `remote-jobs` is the one answerable question that fails, and
-it fails in the whole-corpus variant too, naming four postings of six with every
-location line present in the prompt. The binding constraint there is the answer
-shape -- one opening sentence and at most four bullets cannot carry six postings
--- which no reranker touches. Retrieval owns half of that failure at most.
+```
+recovered  fit-job7      Job #7 — REQUIRED EXPERIENCE   dist#8 -> rr#2
+still out  missing-job3  Job #3 — QUALIFICATIONS        dist#6 -> rr#8  went down
+still out  remote-jobs   Job #2 — header                dist#5 -> rr#4
+still out  align-job5    My resume — TECHNICAL SKILLS   dist#6 -> rr#6  did not move
+```
+
+Two of the three did not merely fail to arrive, they were ranked *the same or
+worse* by the cross-encoder. That is the result the diagnosis cannot survive:
+"it is ordering, not representation" predicts a second ranker disagrees with the
+first, and on these two it agrees.
+
+```
+              evidence  coverage  guardrail  context mean/median
+current        34/45    complete  44/44      8,290 / 5,888
+rerank         36/45    complete  1 flips    8,626 / 5,962
+```
+
+**And the guardrail flip is a false refusal on an answerable question.**
+`compare-all` — "compare all the postings for me" — has its nearest returned
+section move 0.3589 to 0.3893, across the 0.387 threshold. The chunk carrying
+0.3589 was `Job #2 — HOW YOU WILL GROW HERE`, which the cross-encoder ranks 7th
+of 8 and the budget of 3 then drops. Worth noting what that exposes independent
+of reranking: the answerable ceiling, the single number the threshold was fitted
+against, was riding on a section nobody would call evidence for that question.
+
+The fix sketched in advance — keep the bi-encoder distance on the section, never
+the cross-encoder's score — is already what the code does, and it does not
+apply. The flip comes from the *set* changing, not from the number being
+replaced. Computing the guardrail over the pre-rerank candidates would fix it,
+and that is a change to the guardrail's input for a rule that loses anyway.
+
+**Split by question shape the result is clean, and the mechanism is legible.**
+Every gain is a question whose scope resolves to one posting; the only loss is
+the one broad question that carries per-section evidence.
+
+```
++  fit-job7                   1/2 -> 2/2   scoped
++  twin-missing-afficiency    1/3 -> 2/3   scoped
++  twin-interview-afficiency  1/2 -> 2/2   scoped
++  twin-interview-fde         0/1 -> 1/1   scoped
++  twin-align-golden          1/2 -> 2/2   scoped
+-  remote-jobs                4/6 -> 1/6   broad
+```
+
+`remote-jobs` is where the cross-encoder is not merely unhelpful but actively
+worse than the bi-encoder, and the scores say why. Asked "which of these jobs
+are remote?", the six posting headers — the sections holding `Location:` — score
+like this:
+
+```
+Job #6  "Location: Remote | Type: Contract"                      0.1599   rr#1
+Job #2  "Location: Santa Ana, California — on-site"              0.0442   rr#4
+Job #1  "Location: San Francisco (in-office 4–5 days/week…)"     0.0414   rr#4
+Job #5  "Location: Not specified"                                0.0431   rr#4
+Job #4  "Location: San Francisco"                                0.0409   rr#5
+Job #3  "Location: 175 Greenwich St, New York — hybrid"          0.0379   rr#8
+```
+
+The one header that says the word *remote* scores nearly four times the others
+and is the only one the budget keeps. The bi-encoder had four of the six in
+budget; the cross-encoder keeps one. It is not confused — it is doing exactly
+what a cross-encoder does, scoring whether the passage **affirms** the query. A
+comparison question needs the postings that answer *no* as much as the one that
+answers *yes*, and nothing in a relevance score expresses that. This is not a
+quirk of one corpus; it is the shape of the tool.
+
+**One of the four predicted was never an ordering failure at all**, which the
+scores made visible and reading the section confirmed. `Job #3 —
+QUALIFICATIONS` states a degree and "Minimum 4+ years of software engineering
+experience". The question is "what skills am I missing for Job #3?". The
+cross-encoder reads both and ranks it 8th of 10, below six sections that do list
+technologies — which is defensible. The expectation demands that section because
+the ideal answer mentions the 4-years-against-3 gap, so what is mislabelled here
+is the evidence key, not the ranking. Three of the six remaining misses are that
+one section.
+
+**A narrower rule wins on every axis, and it was fitted after seeing the
+failures.** Reranking only when `resolveScope` resolved something, replayed free
+over the same cache:
+
+```
+                evidence  coverage  guardrail  context mean/median
+current          34/45    complete  44/44      8,290 / 5,888
+rerank, all      36/45    complete  1 flips    8,626 / 5,962
+rerank, scoped   39/45    complete  44/44      8,246 / 5,962
+```
+
++5 evidence, no coverage loss, no guardrail movement, and slightly *less*
+context than today. The statement behind it is principled — rerank when the
+question is about one posting, do not when it is about all of them — but three
+things keep it from being adopted on this evidence alone. It was chosen after
+seeing which questions failed. Its exclusion rests on n=1: of the 24 questions
+carrying per-section evidence only four are broad, and three of those
+(`redmuqui`, `summarize`, `align-worldcob`) are resume questions whose sections
+the reranker does not move, so `remote-jobs` is the entire case. And coverage is
+a weak control here because it is document-level: `compare-all`, `roles-common`
+and `best-fit` keep "complete" while the sections inside change substantially,
+and nothing in the harness grades that.
+
+The measurement stands either way and cost nothing to keep: `pnpm eval
+--rerank`, `eval/rerank.json`, and `lib/rerank.ts` with its tests. Adopting the
+scoped variant is a one-line condition in `pick()` and in `retrieve()`, plus a
+rerun of the answers whose context moves. Nothing is wired in.
+
+Cost, if it ever is: a second hosted provider and key, one extra round trip on
+every question, and a trial tier capped at 10 calls a minute — a full 44-question
+pass takes five rounds with a wait between them.
 
 ## Gotchas
 
@@ -542,6 +647,10 @@ Every one of these, every time, and nothing detects most of it:
 
 - `eval/distances.json` — guarded, refuses to run when the chunk count moves.
 - `eval/answers.json` — not guarded. Delete it by hand.
+- `eval/rerank.json` — indexed the same way as the distances, so a corpus change
+  silently misaligns it too. It is guarded only against a change of *model*, not
+  of corpus, because `--rerank` runs behind the chunk-count check above and
+  cannot be reached once that trips. Delete it whenever `distances.json` goes.
 - **`db/identities.sql`.** Ingest does not write `company` or `role_title`, so a
   re-ingested posting comes back with a null identity and silently answers only
   to `Job #N` again — every question naming it by company widens to eight
@@ -1033,6 +1142,14 @@ passage *answers*. No chunk size fixes that. A cross-encoder reading query and
 passage together can separate "this states a location" from "this mentions
 working from home", and all five misses sit between rank 5 and rank 8, inside a
 top-12 net.
+
+That last sentence was measured and it is wrong, on this exact question. Asked
+which jobs are remote, `rerank-v3.5` ranks five of the six `Location:` headers
+4th to 8th inside their own postings and keeps only Job #6's, the one that says
+the word *remote* — worse than the bi-encoder, which had four of six. The
+reranker entry under "Decisions worth not relitigating" carries the scores. What
+survives here is the diagnosis of the *embedding*, which is unchanged: fine
+chunks still do not fix these misses.
 2. **Then narrow the field.** The measured fact this rests on: for "which
    posting talks about RAG and vector databases?" the two postings that mention
    it ranked 1st and 2nd, and the budget handed three slots each to four
@@ -1168,6 +1285,11 @@ which is the section that matches because the question says "Golden Analytics".
 Naming the company narrows the field correctly and then bends the ranking inside
 it. That is the reranker's job and nothing here touches it.
 
+Measured since: the cross-encoder does recover it, `REQUIREMENTS` going from
+rank 5 by distance to rank 4 by score. That is one of the five gains, all of
+them scoped questions, against a loss on the one broad question — the reranker
+entry has the whole comparison and the reason it is not wired in.
+
 **The eval harness stopped caching scope.** `distances.json` still holds one
 scope per question, but it is now rewritten on every run instead of only when a
 question is measured. Caching it is precisely how a change to `resolveScope`
@@ -1224,16 +1346,25 @@ uploading one replaces it in the same transaction and frees its label.
 
 ### Open, in order, with what is already known about each
 
-Two things were designed and measured but not applied. Each has its evidence
+Three things were designed and measured but not applied. Each has its evidence
 above; this is only the shortlist.
 
-1. **The mirror question for `fit-underqualified-job6`.** That answer says "Yes,
+1. **Reranking, scoped only.** The rule as specified lost and is written up
+   under "Decisions worth not relitigating". Restricting it to questions whose
+   scope resolves takes evidence 34/45 to **39/45** with coverage complete, the
+   guardrail unmoved and slightly less context — but the rule was chosen after
+   seeing which questions failed, and the broad case it excludes is a single
+   question. Deciding it costs a rerun of the answers whose context moves, which
+   is the only thing that would say whether +5 sections is +0 correctness like
+   last time. One line in `pick()` and one in `retrieve()` if it is taken.
+
+2. **The mirror question for `fit-underqualified-job6`.** That answer says "Yes,
    underqualified" and lists four gaps and no matches. Whether that is framing
    bias or just a direct answer to a yes/no question is not settled by reading
    it — it is settled by asking "am I well qualified for Job #6?" and seeing
    whether the answer becomes all-positive. One question, three runs.
 
-2. **`fit-underqualified-job6` on `gemini-3.7-flash`.** Its invented citation
+3. **`fit-underqualified-job6` on `gemini-3.7-flash`.** Its invented citation
    contradicts phase 5's finding that the filtered variant cannot produce one,
    but phase 5 measured Gemini and this measured Gemma, and the question is new
    so Gemini never saw it. Either the excerpt count was never the cause, or
