@@ -1,6 +1,13 @@
 import { sql } from "./db.ts";
 import { embedForQuery, toVector } from "./embedding.ts";
 import type { DocumentKind } from "./ingest.ts";
+import { profileExcerpt, type Extraction } from "./extract.ts";
+import {
+  CANDIDATES_PER_DOCUMENT,
+  passageFor,
+  pickPerDocument,
+  scorePassages,
+} from "./rerank.ts";
 import { scopeFor, type DocumentIdentity } from "./scope.ts";
 
 export type RetrievedSection = {
@@ -82,13 +89,81 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
   const scope = await resolveScope(query);
   const vector = toVector(await embedForQuery(query));
   const { perDocument } = await budget(scope);
+  const chosen = scope.length > 0 ? await rerankChunks(query, vector, scope, perDocument) : null;
+  const sections = await search(vector, scope, perDocument, chosen);
+  return scope.length === 0 ? await collapseToProfiles(sections) : sections;
+}
 
+/**
+ * A question naming no posting gets each posting's profile instead of its three
+ * sections. The resume keeps its sections.
+ *
+ * The asymmetry is the point and it is not a hedge. Cost grows with the number
+ * of *postings* -- there is exactly one resume however large the corpus gets --
+ * so collapsing the postings is what moves the wall, and collapsing the resume
+ * would only take detail away from "summarize my experience", which needs the
+ * employer entries and pays nothing for them at scale.
+ *
+ * Distances are preserved, and deliberately: the guardrail reads the nearest
+ * returned section, a profile is not embedded and has no distance of its own, so
+ * the profile inherits the best distance among the sections it replaces. That
+ * keeps the threshold measuring exactly what it measured before -- how near the
+ * question came to any real text -- rather than a number invented here.
+ *
+ * A document with no profile keeps its sections, so an un-extracted upload
+ * degrades to the old behaviour instead of vanishing from the answer.
+ */
+async function collapseToProfiles(sections: RetrievedSection[]): Promise<RetrievedSection[]> {
+  const labels = [...new Set(sections.filter((s) => s.kind === "job").map((s) => s.label))];
+  if (labels.length === 0) return sections;
+
+  const rows = await sql<{ label: string; profile: string | null; extract: Extraction | null }[]>`
+    select label, profile, extract from documents where label = any(${labels})
+  `;
+  const profiles = new Map(rows.map((row) => [row.label, profileExcerpt(row.extract, row.profile)]));
+
+  const kept: RetrievedSection[] = sections.filter(
+    (section) => section.kind !== "job" || !profiles.get(section.label),
+  );
+  for (const label of labels) {
+    const content = profiles.get(label);
+    if (!content) continue;
+    const own = sections.filter((section) => section.label === label);
+    const nearest = own.reduce((best, section) => (section.distance < best.distance ? section : best));
+    kept.push({
+      label,
+      kind: "job",
+      section: PROFILE_SECTION,
+      content,
+      distance: nearest.distance,
+      spread: nearest.spread,
+    });
+  }
+  return kept.sort((a, b) => a.distance - b.distance);
+}
+
+/**
+ * How a profile is labelled in the prompt and therefore in every citation. Short
+ * and literal, because the citation check matches section names by containment
+ * and the model has to be able to reproduce it.
+ */
+export const PROFILE_SECTION = "profile";
+
+function search(
+  vector: string,
+  scope: string[],
+  perDocument: number,
+  chosen: string[] | null,
+) {
   return sql<RetrievedSection[]>`
     with ranked as (${rankChunks(vector, scope, perDocument)}),
     picked as (
       select document_id, section, min(distance) as distance
       from ranked
-      where rank <= budget
+      -- The cross-encoder replaces which chunks fill the budget, never its size
+      -- and never the distance the section is returned with: the guardrail reads
+      -- that distance, and a relevance score is not on the same scale.
+      where ${chosen ? sql`id = any(${chosen}::uuid[])` : sql`rank <= budget`}
       group by document_id, section
     ),
     -- Over every chunk, not just the picked ones: the question is how flat the
@@ -112,6 +187,41 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
     group by d.label, d.kind, p.section, p.distance, s.spread
     order by p.distance
   `;
+}
+
+/**
+ * Which chunks fill the budget, decided by a cross-encoder instead of by
+ * distance. Returns their ids; the caller's query does the rest exactly as it
+ * did before, so the section still carries the bi-encoder's distance.
+ *
+ * Scoped questions only, and that is the whole finding — measured phase 7 with
+ * `pnpm eval --rerank`, written up in CLAUDE.md. Reranking everything scores
+ * 36/45 and reranking only what `resolveScope` resolved scores 39/45, because a
+ * cross-encoder ranks by whether a passage *affirms* the query. That is what a
+ * question about one posting wants and the opposite of what "which of these
+ * jobs are remote?" needs: asked that, it kept the one header saying "Remote"
+ * and dropped the five stating a city, which are the postings that answer no.
+ *
+ * So the field has to be narrow before this runs, which is also why phase 7 did
+ * scope resolution first.
+ */
+async function rerankChunks(
+  query: string,
+  vector: string,
+  scope: string[],
+  perDocument: number,
+) {
+  const candidates = await sql<
+    { id: string; label: string; section: string; content: string; budget: number }[]
+  >`
+    with ranked as (${rankChunks(vector, scope, perDocument)})
+    select id, label, section, content, budget::int
+    from ranked where rank <= ${CANDIDATES_PER_DOCUMENT}
+  `;
+  const scores = await scorePassages(query, candidates.map(passageFor));
+  return pickPerDocument(
+    candidates.map((candidate, at) => ({ ...candidate, score: scores[at] })),
+  ).map((candidate) => candidate.id);
 }
 
 /** How many documents a question puts in play, and the budget that implies. */
@@ -138,9 +248,11 @@ async function budget(scope: string[]) {
  */
 function rankChunks(vector: string, scope: string[], perDocument: number) {
   return sql`
-    select c.document_id,
+    select c.id,
+           c.document_id,
            c.section,
            c.position,
+           c.content,
            length(c.content) as chars,
            d.label,
            d.kind,

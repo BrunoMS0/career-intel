@@ -4,6 +4,7 @@ import { enrich, unlabeledShare } from "./chunk.ts";
 import { chunkMarkdown } from "./chunk-markdown.ts";
 import { sql } from "./db.ts";
 import { embedForIndex, toVector } from "./embedding.ts";
+import { extractDocument } from "./extract.ts";
 import {
   compareFidelity,
   extractOrderedText,
@@ -72,11 +73,15 @@ export async function ingest(input: {
   roleTitle?: string | null;
 }) {
   const data = new Uint8Array(await input.file.arrayBuffer());
-  const [markdown, verbatim] = await Promise.all([
+  const [markdown, verbatim, extracted] = await Promise.all([
     extractOrderedText(data, input.file.name, PARSE_MODE, {
       system_prompt_append: STRUCTURE_INSTRUCTION,
     }),
     extractVerbatim(data).catch(() => ""),
+    // Deliberately not fatal. A document with no profile answers from its
+    // sections exactly as every document did before, so a hosted extraction
+    // being down costs breadth-question context and not the upload.
+    extractDocument(data, input.file.name, input.kind).catch(() => null),
   ]);
 
   const chunks = chunkMarkdown(markdown);
@@ -100,9 +105,11 @@ export async function ingest(input: {
         : [];
 
     const [document] = await tx<{ id: string }[]>`
-      insert into documents (kind, label, company, role_title, filename, content)
+      insert into documents (kind, label, company, role_title, filename, content, profile, extract)
       values (${input.kind}, ${input.label}, ${input.company ?? null},
-              ${input.roleTitle ?? null}, ${input.file.name}, ${markdown})
+              ${input.roleTitle ?? null}, ${input.file.name}, ${markdown},
+              ${extracted?.profile ?? null},
+              ${extracted ? tx.json(extracted.extract as never) : null})
       returning id
     `;
 

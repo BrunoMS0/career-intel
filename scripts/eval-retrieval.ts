@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { sql } from "../lib/db.ts";
+import { profileExcerpt, type Extraction } from "../lib/extract.ts";
 import { embedForQuery, toVector } from "../lib/embedding.ts";
 import { WEAK_DISTANCE } from "../lib/guardrail.ts";
 import {
@@ -11,6 +12,7 @@ import {
 import {
   CHUNKS_PER_DOCUMENT,
   MAX_FOCUSED_DOCUMENTS,
+  PROFILE_SECTION,
   RESUME_CHUNKS,
   resolveScope,
   retrieve,
@@ -105,6 +107,19 @@ const chunks = await sql<Chunk[]>`
   from chunks c join documents d on d.id = c.document_id
   order by d.label, c.position
 `;
+
+// How long each posting's profile renders, so the offline replay can price the
+// collapse the same way retrieve() performs it. Read from the database rather
+// than cached in the snapshot: a re-extraction changes these and nothing about
+// the distances, so tying them to the distance cache would measure a stale one.
+const documents = await sql<{ label: string; profile: string | null; extract: Extraction | null }[]>`
+  select label, profile, extract from documents where kind = 'job'
+`;
+const PROFILE_CHARS = new Map(
+  documents
+    .map((row) => [row.label, profileExcerpt(row.extract, row.profile)?.length ?? 0] as const)
+    .filter(([, chars]) => chars > 0),
+);
 
 const snapshot: Snapshot = existsSync(SNAPSHOT)
   ? JSON.parse(readFileSync(SNAPSHOT, "utf8"))
@@ -240,6 +255,32 @@ if (reranking) {
   }
 }
 
+/**
+ * Every rule this file can replay. `scoped` is what lib/retrieval.ts does, so it
+ * is the default everywhere below: reporting `off` as the headline would be a
+ * harness describing the rule that used to run, which is the drift the scope
+ * cache was stopped from causing. `all` is kept because it is the loser the
+ * comparison is against, not because anything runs it.
+ */
+type Rule = "off" | "scoped" | "all";
+const SHIPPED: Rule = "scoped";
+
+// Without the scores the replay cannot reproduce what ships, and it would fail
+// quietly -- a missing score sorts to -1, every chunk ties, and the distance
+// order survives looking exactly like a rule that ran.
+const unscored = questions.filter(
+  (question) => (snapshot.scope[question.id] ?? []).length > 0 && !reranks.scores[question.id],
+);
+if (unscored.length > 0) {
+  console.error(
+    `${unscored.length} scoped questions have no cached cross-encoder score, and ` +
+      `lib/retrieval.ts reranks those.\nrun \`pnpm eval --rerank\` first: ` +
+      `${unscored.map((question) => question.id).join(", ")}`,
+  );
+  await sql.end();
+  process.exit(1);
+}
+
 // ------------------------------------------------------------- the current rule
 
 type Picked = { label: string; section: string; distance: number; chars: number };
@@ -252,7 +293,7 @@ type Picked = { label: string; section: string; distance: number; chars: number 
  * A mirror that drifts measures nothing, so `pnpm eval` checks it against the
  * real retrieve() before reporting anything.
  */
-function pick(question: Question, band?: number, reranked = false): Picked[] {
+function pick(question: Question, band?: number, rule: Rule = SHIPPED): Picked[] {
   const scope = snapshot.scope[question.id] ?? [];
   const inPlay = (chunk: Chunk) =>
     chunk.kind === "resume" || scope.length === 0 || scope.includes(chunk.label);
@@ -267,7 +308,10 @@ function pick(question: Question, band?: number, reranked = false): Picked[] {
     documents.size > BUDGET.maxFocusedDocuments ? BUDGET.broad : BUDGET.focused;
 
   const best = Math.min(...rows.map((row) => row.distance));
-  const scores = reranked ? reranks.scores[question.id] : undefined;
+  const scores =
+    rule === "all" || (rule === "scoped" && scope.length > 0)
+      ? reranks.scores[question.id]
+      : undefined;
   const hits = [...documents].flatMap((label) => {
     const own = rows
       .filter((row) => row.label === label)
@@ -289,18 +333,20 @@ function pick(question: Question, band?: number, reranked = false): Picked[] {
   // Parent expansion: the chunk is the key, the whole section is the payload.
   const sections = new Map<string, Picked>();
   for (const hit of hits) {
-    const key = `${hit.label}${SEPARATOR}${hit.section}`;
-    const chars = snapshot.chunks
-      .filter((chunk) => chunk.label === hit.label && chunk.section === hit.section)
-      .reduce((sum, chunk) => sum + chunk.chars, 0);
+    // A question naming no posting gets each posting's profile in place of its
+    // sections, which is what retrieve() sends. The resume keeps its sections;
+    // cost grows with the number of postings and there is only ever one resume.
+    const collapse = scope.length === 0 && hit.kind === "job" && PROFILE_CHARS.has(hit.label);
+    const section = collapse ? PROFILE_SECTION : hit.section;
+    const key = `${hit.label}${SEPARATOR}${section}`;
+    const chars = collapse
+      ? PROFILE_CHARS.get(hit.label)!
+      : snapshot.chunks
+          .filter((chunk) => chunk.label === hit.label && chunk.section === hit.section)
+          .reduce((sum, chunk) => sum + chunk.chars, 0);
     const seen = sections.get(key);
     if (!seen || hit.distance < seen.distance) {
-      sections.set(key, {
-        label: hit.label,
-        section: hit.section,
-        distance: hit.distance,
-        chars,
-      });
+      sections.set(key, { label: hit.label, section, distance: hit.distance, chars });
     }
   }
   return [...sections.values()].sort((a, b) => a.distance - b.distance);
@@ -327,6 +373,10 @@ const bestHit = (question: Question) => {
 // label, one naming none, and one naming a company. The third is the phase 7
 // path -- without it the mirror would agree with the SQL while never running the
 // rule that changed.
+//
+// Two of the three are scoped, so this costs two live cross-encoder calls on
+// every run. That is the point: the replay reranks from a cache and the app
+// reranks over the wire, and this is the only place the two are made to agree.
 const mirrored: string[] = [];
 for (const id of ["pay-job2", "best-fit", "title-afficiency"]) {
   const question = questions.find((entry) => entry.id === id)!;
@@ -535,32 +585,40 @@ if (reranking) {
 
   const withEvidence = questions.filter((question) => question.evidence.length > 0);
   const key = (section: Picked) => `${section.label}${SEPARATOR}${section.section}`;
-  const found = (question: Question, on: boolean) => {
-    const got = new Set(pick(question, undefined, on).map(key));
+  const found = (question: Question, rule: Rule) => {
+    const got = new Set(pick(question, undefined, rule).map(key));
     return question.evidence.filter((section) => got.has(section));
   };
-
-  let before = 0;
-  let after = 0;
-  for (const question of withEvidence) {
-    const was = found(question, false);
-    const now = found(question, true);
-    before += was.length;
-    after += now.length;
-    const won = now.filter((section) => !was.includes(section));
-    const lost = was.filter((section) => !now.includes(section));
-    if (verbose || won.length > 0 || lost.length > 0) {
-      console.log(
-        `  ${won.length > lost.length ? " +  " : lost.length > won.length ? " -  " : "    "}` +
-          `${question.id.padEnd(26)} ${was.length}/${question.evidence.length} -> ` +
-          `${now.length}/${question.evidence.length}` +
-          (won.length ? `   won ${won.join(", ")}` : "") +
-          (lost.length ? `   lost ${lost.join(", ")}` : ""),
-      );
-    }
-  }
   const total = withEvidence.reduce((sum, question) => sum + question.evidence.length, 0);
-  console.log(`\n  evidence ${before}/${total} -> ${after}/${total}`);
+  const recall = (rule: Rule) =>
+    withEvidence.reduce((sum, question) => sum + found(question, rule).length, 0);
+
+  // Per question against the distance-only rule, for both candidates at once:
+  // the split between them is the whole result, and it is a split by question
+  // shape rather than by how much a section moved.
+  for (const question of withEvidence) {
+    const was = found(question, "off");
+    const scoped = found(question, "scoped");
+    const all = found(question, "all");
+    const same = was.length === scoped.length && was.length === all.length;
+    if (!verbose && same) continue;
+    const of = question.evidence.length;
+    console.log(
+      `  ${question.id.padEnd(26)} ${(snapshot.scope[question.id] ?? []).length ? "scoped" : "broad "} ` +
+        `${was.length}/${of} -> scoped ${scoped.length}/${of}, all ${all.length}/${of}`,
+    );
+    const moved = [
+      ...scoped.filter((section) => !was.includes(section)).map((s) => `+${s}`),
+      ...was.filter((section) => !scoped.includes(section)).map((s) => `-${s}`),
+      ...all.filter((section) => !was.includes(section) && !scoped.includes(section)).map((s) => `+${s} (all only)`),
+      ...was.filter((section) => !all.includes(section) && scoped.includes(section)).map((s) => `-${s} (all only)`),
+    ];
+    if (moved.length) console.log(`        ${moved.join("; ")}`);
+  }
+  console.log(
+    `\n  evidence   off ${recall("off")}/${total}   scoped ${recall("scoped")}/${total}   ` +
+      `all ${recall("all")}/${total}`,
+  );
 
   // The falsifiable part. These four survived every index-level change measured
   // -- finer chunks, identity in the embedding, normalised section tags -- and
@@ -576,56 +634,64 @@ if (reranking) {
   console.log("\n  the four the ordering diagnosis predicts\n");
   for (const [id, section] of PREDICTED) {
     const question = questions.find((entry) => entry.id === id)!;
-    const got = new Set(pick(question, undefined, true).map(key));
+    const got = new Set(pick(question, undefined, "all").map(key));
     console.log(`    ${got.has(section) ? "recovered" : "still out"}  ${id.padEnd(14)} ${section}`);
   }
 
-  const shortfall = questions
-    .filter((question) => question.coverage.length > 0)
-    .filter((question) => {
-      const seen = new Set(pick(question, undefined, true).map((section) => section.label));
-      return question.coverage.some((label) => !seen.has(label));
-    });
-  console.log(
-    `\n  coverage: ${
-      shortfall.length === 0
-        ? "still complete"
-        : `${shortfall.length} short -- ${shortfall.map((q) => q.id).join(", ")}`
-    }`,
-  );
+  for (const rule of ["scoped", "all"] as Rule[]) {
+    const shortfall = questions
+      .filter((question) => question.coverage.length > 0)
+      .filter((question) => {
+        const seen = new Set(pick(question, undefined, rule).map((section) => section.label));
+        return question.coverage.some((label) => !seen.has(label));
+      });
+    console.log(
+      `\n  coverage, ${rule}: ${
+        shortfall.length === 0
+          ? "still complete"
+          : `${shortfall.length} short -- ${shortfall.map((q) => q.id).join(", ")}`
+      }`,
+    );
+  }
 
   // The guardrail reads the nearest *returned* section, so reranking a chunk out
   // of the budget could raise it and refuse a question the threshold passes
   // today. This is the check for that, and it is why the app keeps the
   // bi-encoder distance on the section rather than the cross-encoder's score.
-  const nearest = (question: Question, on: boolean) =>
-    Math.min(...pick(question, undefined, on).map((section) => section.distance));
-  const moved = questions.filter(
-    (question) => Math.abs(nearest(question, false) - nearest(question, true)) > 0.00005,
-  );
-  const flipped = moved.filter(
-    (question) =>
-      nearest(question, false) > WEAK_DISTANCE !== (nearest(question, true) > WEAK_DISTANCE),
-  );
-  console.log(
-    `  guardrail: nearest returned section moved on ${moved.length} of ${questions.length} questions, ` +
-      `${flipped.length} would change side`,
-  );
-  for (const question of moved) {
-    console.log(
-      `    ${question.id.padEnd(26)} ${nearest(question, false).toFixed(4)} -> ${nearest(question, true).toFixed(4)}`,
+  const nearest = (question: Question, rule: Rule) =>
+    Math.min(...pick(question, undefined, rule).map((section) => section.distance));
+  for (const rule of ["scoped", "all"] as Rule[]) {
+    const moved = questions.filter(
+      (question) => Math.abs(nearest(question, "off") - nearest(question, rule)) > 0.00005,
     );
+    const flipped = moved.filter(
+      (question) =>
+        nearest(question, "off") > WEAK_DISTANCE !== (nearest(question, rule) > WEAK_DISTANCE),
+    );
+    console.log(
+      `\n  guardrail, ${rule}: nearest returned section moved on ${moved.length} of ` +
+        `${questions.length} questions, ${flipped.length} would change side`,
+    );
+    for (const question of flipped) {
+      console.log(
+        `    FLIP ${question.id.padEnd(22)} ${nearest(question, "off").toFixed(4)} -> ` +
+          `${nearest(question, rule).toFixed(4)} across ${WEAK_DISTANCE}`,
+      );
+    }
   }
 
-  const chars = (on: boolean) =>
+  const chars = (rule: Rule) =>
     questions
       .filter((question) => !question.refuse)
       .map((question) =>
-        pick(question, undefined, on).reduce((sum, section) => sum + section.chars, 0),
+        pick(question, undefined, rule).reduce((sum, section) => sum + section.chars, 0),
       );
   const mean = (values: number[]) =>
     Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-  console.log(`  context: ${mean(chars(false))} -> ${mean(chars(true))} chars on average`);
+  console.log(
+    `\n  context, chars on average: off ${mean(chars("off"))}   ` +
+      `scoped ${mean(chars("scoped"))}   all ${mean(chars("all"))}`,
+  );
 }
 
 await sql.end();

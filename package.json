@@ -12,6 +12,7 @@
     "compare": "node --env-file=.env scripts/compare-parsers.ts",
     "chunks": "node --env-file=.env scripts/inspect-chunks.ts",
     "retrieve": "node --env-file=.env scripts/inspect-query.ts",
+    "profiles": "node --env-file=.env scripts/extract-profiles.ts",
     "eval": "node --env-file=.env scripts/eval-retrieval.ts",
     "answers": "node --env-file=.env scripts/eval-answers.ts"
   },
