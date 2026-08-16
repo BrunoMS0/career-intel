@@ -60,6 +60,9 @@ https://github.com/BrunoMS0/career-intel
   no embedding calls and both see identical numbers
 - `eval/answers.json` — every answer both variants produced, cached per question
   so an interrupted pass resumes and a finished one can be reread for free
+- `lib/extract.ts` — the extraction schemas and the one call per document, plus
+  `profileExcerpt()`, which renders what a broad question receives in place of a
+  posting's sections. Pure, so `pnpm test` covers the rendering and the casting
 - `lib/rerank.ts` — the cross-encoder candidate rule: one batched call per
   question, then the same per-document budget over the new order. Measured and
   not adopted; `lib/retrieval.ts` does not import it
@@ -80,6 +83,7 @@ pnpm inspect <file.pdf> [--text]      # how a PDF chunks under unpdf, without in
 pnpm compare <file.pdf>...            # both parsers side by side, with fidelity
 pnpm chunks ["<label>"] [--full]      # what is actually indexed, from the db
 pnpm retrieve [--chunks] "<question>" # what a question retrieves, with distances
+pnpm profiles <dir> [--force]         # fill documents.profile from the PDFs in <dir>
 pnpm eval [--verbose]                 # retrieval eval over eval/questions.json
 pnpm eval --rerank                    # + the cross-encoder as a candidate rule
 
@@ -651,6 +655,12 @@ Every one of these, every time, and nothing detects most of it:
   silently misaligns it too. It is guarded only against a change of *model*, not
   of corpus, because `--rerank` runs behind the chunk-count check above and
   cannot be reached once that trips. Delete it whenever `distances.json` goes.
+- **`documents.profile` and `documents.extract`.** A re-ingested document gets
+  them from `lib/extract.ts` automatically, but a document that predates the
+  column, or one whose extraction failed, has neither -- and it then answers a
+  broad question with its sections while every other posting answers with a
+  profile, which no check reports. `pnpm profiles <dir>` fills what is missing;
+  `--force` redoes everything after the schema changes.
 - **`db/identities.sql`.** Ingest does not write `company` or `role_title`, so a
   re-ingested posting comes back with a null identity and silently answers only
   to `Job #N` again — every question naming it by company widens to eight
@@ -1407,7 +1417,126 @@ that reading would not have:
   opens upward, rendered off the top edge. `flex-1` plus `min-h-0` fixes it, and
   the transcript scrolls now instead of growing.
 
-### Phase 8 — the UI
+### Phase 8 — scalability: a profile per document
+
+**The wall was arithmetic and it sat at about 21 documents.** A question naming
+no posting drew three sections from every document, ~1,940 characters each, and
+phase 5 measured attribution collapsing at 64 labelled excerpts. 64 / 3.1
+sections per document is 21. Nothing about the reranker or the candidate net
+touches that: a scoped question already narrows to two documents and is O(1) in
+corpus size, and the only thing that grows is what a *broad* question sends.
+
+**Done: structured extraction at ingest, and postings answer breadth questions
+with a profile instead of three sections.** `lib/extract.ts` holds the schema and
+one LlamaExtract call per document; `documents.profile` and `documents.extract`
+hold the result; `retrieve()` collapses each posting to its profile when
+`resolveScope` resolves nothing. The resume keeps its sections — cost grows with
+the number of postings and there is only ever one resume.
+
+**The schema is where all the work was, and LlamaCloud's own "design with agent"
+produces one that invents.** Asked about the two postings that state no work
+arrangement, its schema answered `"on-site"` both times at confidence 0.955,
+while its own reasoning trace read "The job description does not specify if the
+role is remote, hybrid, or on-site." It marks `location` and `work_arrangement`
+required, offers no `unstated` in the enum, and makes nothing nullable. The
+`agentic` tier does not rescue it — same invention, same two documents.
+
+Three rules came out of iterating against that, each costing a failed run:
+
+- **Null is not reachable.** A field typed `["string", "null"]` comes back `""`,
+  which is indistinguishable from a failed extraction. Absence has to be a
+  literal enum member, `unstated`.
+- **A nullable object breaks nested extraction.** `compensation` typed
+  `["object", "null"]` returned `{}` on all four documents while its reasoning
+  said "The posting states: '$180,000 – $300,000 base + benefits & equity'". It
+  had the answer and dropped it. Flat fields get it.
+- **Enums are honoured, prose prohibitions are not.** "Never put 'unstated' in
+  this array" produced `["unstated"]`; "do not send 0" produced `0`. Anything
+  that must not happen has to be inexpressible, not forbidden — which is why
+  every number is a string here and is cast in `numeric()`.
+
+```
+                        schema del agente      schema final
+v1 PREMIUM              10/12,  2 inventos     12/12,  0 inventos
+v2 agentic              inventa igual          12/12,  0 inventos
+```
+
+Scored against what the PDFs say, over the four that state least. `work_mode` is
+7/7 across the whole corpus, including the `unstated` that Job #4 earns for
+naming a city and no arrangement.
+
+**`tier: "agentic"` is real, and only on one of the two surfaces.**
+`/api/v2/extract` validates it (`cost_effective` 5 credits/page, `agentic` 15,
+`agentic_plus` 50) and takes `extraction_target: "per_doc"` in lower case.
+`/api/v1/extraction/run`, which the installed SDK wraps, takes `extraction_mode`
+instead and **silently ignores a `tier` key** — proven by a nonsense tier
+returning 200 while a nonsense `extraction_mode` returns 422. Passing `tier`
+there succeeds, changes nothing and never warns. v1 is still what to reach for
+when a field comes back wrong: it has `use_reasoning`, which is what made every
+bug above findable, and v2 does not expose it.
+
+`cost_effective` ships, because it ties with `agentic` on this corpus at a third
+of the price. The honest limit: four documents and three fields, over
+text-native PDFs the user restructured with explicit headings. A scanned or
+multi-column document is where a stronger tier would earn its price.
+
+**What it bought, measured both halves.**
+
+```
+                        before        after
+retrieval evidence      39/45         41/45
+remote-jobs evidence     4/6           6/6
+coverage                complete      complete
+guardrail               44/44         44/44
+drift                   0.0000        0.0000
+context, mean           8,246 ch      6,487 ch     -21%
+context, longest       17,581 ch     10,146 ch     -42%
+
+answers, 3 runs        40–41/44      40–41/44
+answerable              26/29         26/29
+landed the same 3x      30/36         30/36
+```
+
+**The score did not move**, which is the third time in this file that better
+retrieval bought no correctness — see the reranker and the whole-corpus variant.
+What moved is cost, and one specific falsehood.
+
+**`remote-jobs` stopped lying.** It used to answer "Job #2, #3, #5 and #7 do not
+state a location", which is false for Job #2 (Santa Ana, on-site) and Job #3
+(New York, hybrid) — the two headers retrieval never returned. It now opens
+"Only Job #6 is remote", which is correct, and the `mustNot` fitted to catch the
+old falsehood no longer fires. It still fails, on a different rule: it spends
+its four bullets on Job #6, #4, #5 and #7 and never names #1, #2 and #3. The
+`must` demands all seven postings and `lib/prompt.ts` allows four bullets, so
+**the check and the prompt contradict each other** and no retrieval change can
+satisfy both. That is now the whole of this failure.
+
+**Two comparative answers got worse, and the harness cannot see it.** Both were
+found by reading, and both are graded coverage-only at document level, so they
+still pass:
+
+- `compare-all` drifted off the question. It used to compare the postings
+  against each other — location, technical focus, compensation transparency,
+  years required. It now answers about the candidate's fit, and reintroduces the
+  degree claim: "Educational requirements for Jobs #3, #4 and #6 are not stated
+  on the resume", while the resume states a Bachelor's in Computer Engineering
+  from PUCP.
+- `best-fit` reasons more shallowly and changed its pick from Job #4 to Job #2.
+  It used to cross `My resume — SUMMARY`, `Data Analytics` and `TECHNICAL
+  SKILLS` against `Job #4 — EXPERIENCE`; it now matches a skills list against a
+  skills list.
+
+The degree claim has a concrete cause and a cheap candidate fix. The resume is
+deliberately *not* collapsed, so its profile — which contains the PUCP degree —
+is never sent, while every posting gained a structured summary. Sending the
+resume's profile *in addition to* its sections on broad questions costs 1,017
+characters. Not done, because it is a change to measure and not to assume.
+
+**Known and not fixed:** when currency and period are unstated the compensation
+line renders as `120000–155000 unstated per unstated`. Cosmetic, reaches the
+model, and changing it invalidates the 41 answers just measured.
+
+### Phase 8b — the UI
 
 Real labels were the whole of this phase and there is nothing retrieval-shaped
 left in it. "Job #1" is still not a name anyone would type, but phase 7 made that
