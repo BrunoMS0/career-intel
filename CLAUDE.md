@@ -1536,6 +1536,66 @@ characters. Not done, because it is a change to measure and not to assume.
 line renders as `120000–155000 unstated per unstated`. Cosmetic, reaches the
 model, and changing it invalidates the 41 answers just measured.
 
+**A summary keeps categories and drops instances, and that is a regression this
+change introduced — found by a question the set did not have.** Asked "of all the
+jobs, which ones mention WebGL?", the app answers that no posting mentions it.
+Job #2 does: its `NICE TO HAVE` reads "Canvas, timeline, or media-editor work:
+Pixi, Fabric, Remotion, WebGL, or comparable". The extraction stored the bullet
+as `"Canvas, timeline, or media-editor work"` and dropped everything after the
+colon, so the profile that replaced the section carries the category and none of
+the products.
+
+The failure mode is the worst available: the answer is perfectly grounded in
+what it was shown, it names what it looked for exactly as the prompt instructs,
+and it is false. Nothing flags it. And the pre-profile system answered it
+correctly — `NICE TO HAVE` ranks **1st** of Job #2's eight chunks at 0.3073, well
+inside a broad budget of 3.
+
+`mentions-webgl` and `mentions-kubernetes` were added to measure it. The pair is
+the control for each other: only Job #6 mentions Kubernetes, the extraction did
+capture it as an instance, and that question passes. What separates them is not
+how rare the term is but whether the extractor kept it or absorbed it into a
+category.
+
+**Three fixes were measured and only the third works.**
+
+```
+                                evidence   amplias: secciones   chars
+perfil solo (hoy)                42/47           11.0            9,694
+perfil + 1 seccion               43/47           18.0           14,003
+perfil + 2 secciones             43/47           25.0           18,483
+perfil + 3 secciones             43/47           32.0           22,973
+```
+
+Riding one section along with each profile recovers **exactly one** expected
+section for 44% more context on broad questions, and two or three recover
+nothing further. It also halves the whole point of the phase: each posting goes
+back to contributing two items instead of one, so the 64-excerpt wall moves from
+60 documents to 30. And it is not even general — Kubernetes lives in Job #6's
+**2nd** nearest chunk, so a keep-the-nearest rule would not have rescued it
+either.
+
+Sharpening the schema does not work, which is the fourth time prose has lost to
+structure here. `technologies` was re-described to demand "the ones that appear
+as examples after a colon, in parentheses, or after 'such as', 'e.g.', 'like' or
+'or comparable'... not only the required stack", and Job #2 came back with the
+same six entries and no WebGL, no Pixi, no Remotion.
+
+What does work is not retrieval at all. **"Which of these mention X?" is a
+lexical query, not a semantic one**, and nothing that measures what a text is
+*about* — embedding, summary or cross-encoder — answers it. `documents.content`
+already holds the full text of every document and is read by nothing:
+
+```
+select label from documents where content ilike '%webgl%'       Job #2   0.9 ms
+select label from documents where content ilike '%kubernetes%'  Job #6
+```
+
+Both exact. The open part is not the search, it is deciding *when* to run it —
+routing a term-lookup question to `WHERE` instead of to the index — and that is
+the same hybrid-routing step the scalability analysis already concludes with.
+Nothing is wired in.
+
 ### Phase 8b — the UI
 
 Real labels were the whole of this phase and there is nothing retrieval-shaped

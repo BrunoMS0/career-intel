@@ -981,5 +981,47 @@
    "funnel"
   ],
   "why": "The twin of `fit-job7`, and the pair where the widened field should hurt most. The scoped version already fails to retrieve `Job #7 — REQUIRED EXPERIENCE` at rank 8 of 11 with a budget of 4; unscoped the budget dropped to 3, so the same section had to climb higher from further back. It is the counter-example: naming the title retrieves REQUIRED EXPERIENCE where naming the label does not, because the title is the vocabulary of that section."
+ },
+ {
+  "id": "mentions-webgl",
+  "q": "of all the jobs, which ones mention WebGL?",
+  "class": "answerable",
+  "scope": [],
+  "refuse": false,
+  "evidence": [
+   "Job #2 — NICE TO HAVE"
+  ],
+  "coverage": [
+   "Job #2"
+  ],
+  "must": [
+   "Job #2",
+   "WebGL"
+  ],
+  "mustNot": [
+   "(no|none|not).{0,40}(job|posting|document)s?.{0,40}mention.{0,20}WebGL",
+   "do(es)? not (state|mention|specify).{0,30}WebGL"
+  ],
+  "why": "Job #2 lists WebGL in NICE TO HAVE: 'Canvas, timeline, or media-editor work: Pixi, Fabric, Remotion, WebGL, or comparable'. No other document mentions it. This is the question shape the whole question set was missing -- a lookup for one specific term across every posting -- and it is what caught the profile collapse losing instances. The extraction stored the bullet as 'Canvas, timeline, or media-editor work' and dropped everything after the colon, so a broad question that receives only profiles answers that no posting mentions WebGL, which is false and perfectly grounded in what it was shown. The chunk path ranks NICE TO HAVE first at 0.3073, so the pre-profile system answered it correctly."
+ },
+ {
+  "id": "mentions-kubernetes",
+  "q": "of all the jobs, which ones mention Kubernetes?",
+  "class": "answerable",
+  "scope": [],
+  "refuse": false,
+  "evidence": [
+   "Job #6 — profile"
+  ],
+  "coverage": [
+   "Job #6"
+  ],
+  "must": [
+   "Job #6"
+  ],
+  "mustNot": [
+   "(no|none|not).{0,40}(job|posting|document)s?.{0,40}mention.{0,20}Kubernetes"
+  ],
+  "why": "The control for mentions-webgl, and it passes where that one fails. Only Job #6 mentions Kubernetes, twice, and the extraction did capture it in both technologies and must_have_skills -- so the profile carries it and the answer is correct. What the pair isolates is not whether the term is rare but whether the extraction kept it as an instance or absorbed it into a category. Worth knowing for anyone tuning this: the chunk holding Kubernetes ranks 2nd inside Job #6, not 1st, so a rule that keeps only the single nearest section would not have rescued it either."
  }
 ]
