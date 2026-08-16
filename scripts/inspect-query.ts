@@ -1,5 +1,13 @@
 import { sql } from "../lib/db.ts";
-import { explainRetrieval, resolveScope, retrieve } from "../lib/retrieval.ts";
+import { RERANK_MODEL } from "../lib/rerank.ts";
+import {
+  explainRetrieval,
+  resolveScope,
+  retrieve,
+  trim,
+  SECTIONS_KEPT,
+  TRUST_SCORE,
+} from "../lib/retrieval.ts";
 
 /**
  * Shows what a question actually retrieves, and how near each hit was, without
@@ -9,13 +17,17 @@ import { explainRetrieval, resolveScope, retrieve } from "../lib/retrieval.ts";
  *   pnpm retrieve "What skills am I missing for Job #4?"
  *   pnpm retrieve --chunks "..."   both stages: the chunks that matched, then
  *                                  the sections they pulled in
+ *   pnpm retrieve --rerank "..."   scores what came back with the cross-encoder
+ *                                  and prints the gap between consecutive
+ *                                  sections, so a cut can be judged by eye
  */
 const args = process.argv.slice(2);
 const verbose = args.includes("--chunks");
-const question = args.filter((arg) => arg !== "--chunks").join(" ");
+const reranking = args.includes("--rerank");
+const question = args.filter((arg) => !arg.startsWith("--")).join(" ");
 
 if (!question) {
-  console.error('usage: pnpm retrieve [--chunks] "<question>"');
+  console.error('usage: pnpm retrieve [--chunks] [--rerank] "<question>"');
   process.exit(1);
 }
 
@@ -57,6 +69,10 @@ if (verbose) {
 }
 
 const sections = await retrieve(question);
+// The trim is a candidate rule, not part of the answer path. --rerank runs it
+// here so its scores and its cut can be read, and prints it as what it *would*
+// keep rather than as what shipped.
+const trimmed = reranking ? await trim(question, sections) : null;
 
 console.log("distance  document          section");
 for (const section of sections) {
@@ -68,6 +84,46 @@ for (const section of sections) {
 
 const chars = sections.reduce((sum, section) => sum + section.content.length, 0);
 console.log(`\n${sections.length} sections, ${chars} chars of context`);
+
+if (reranking && trimmed?.scores) {
+  const ranked = [...trimmed.scores].sort((a, b) => b.score - a.score);
+  const top = ranked[0].score;
+  const trusted = trimmed.trusted ?? top >= TRUST_SCORE;
+  const wouldKeep = new Set(
+    trimmed.sections.map((section) => `${section.label} — ${section.section}`),
+  );
+
+  console.log(
+    `\n\nCROSS-ENCODER (${RERANK_MODEL}) over the ${sections.length} sections above` +
+      `\n  candidate rule, not what ships: keep the best ${SECTIONS_KEPT}\n`,
+  );
+  console.log(
+    `  best score ${top.toFixed(4)} ${trusted ? ">=" : "<"} ${TRUST_SCORE}, so the order that would decide is ` +
+      `${trusted ? "the cross-encoder's" : "the bi-encoder's distance"}\n`,
+  );
+  console.log("  keep  #   score    gap      dist   chars  section");
+  let running = 0;
+  for (const [at, section] of ranked.entries()) {
+    const inCut = wouldKeep.has(`${section.label} — ${section.section}`);
+    if (inCut) running += section.content.length;
+    const gap = at === 0 ? 0 : ranked[at - 1].score - section.score;
+    console.log(
+      `  ${inCut ? " ok " : "  . "}  ${String(at + 1).padStart(2)}  ${section.score.toFixed(4)}  ` +
+        `${at === 0 ? "       " : (gap > 0 ? "-" : " ") + gap.toFixed(4)}  ` +
+        `${section.distance.toFixed(4)}  ${String(inCut ? running : 0).padStart(5)}  ${section.label} — ${section.section}`,
+    );
+  }
+
+  const gaps = ranked.map((s, at) => (at === 0 ? -1 : ranked[at - 1].score - s.score));
+  const widest = gaps.indexOf(Math.max(...gaps));
+  console.log(
+    `\n  widest gap ${Math.max(...gaps).toFixed(4)} between #${widest} and #${widest + 1}` +
+      `\n  it would send ${trimmed.sections.length} of ${sections.length} sections, ${running} of ${chars} chars` +
+      `\n  measured and not adopted: same evidence 35/45, half the context, 3-4 answers worse`,
+  );
+} else if (reranking) {
+  console.log(`\n\n${sections.length} sections is already at or under the ${SECTIONS_KEPT} the trim keeps, so it does nothing here.`);
+}
 
 if (verbose) {
   const [{ total }] = await sql<{ total: number }[]>`

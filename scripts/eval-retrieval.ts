@@ -11,6 +11,7 @@ import {
 } from "../lib/rerank.ts";
 import {
   CHUNKS_PER_DOCUMENT,
+  COLLAPSE,
   MAX_FOCUSED_DOCUMENTS,
   PROFILE_SECTION,
   RESUME_CHUNKS,
@@ -336,7 +337,8 @@ function pick(question: Question, band?: number, rule: Rule = SHIPPED): Picked[]
     // A question naming no posting gets each posting's profile in place of its
     // sections, which is what retrieve() sends. The resume keeps its sections;
     // cost grows with the number of postings and there is only ever one resume.
-    const collapse = scope.length === 0 && hit.kind === "job" && PROFILE_CHARS.has(hit.label);
+    const collapse =
+      COLLAPSE && scope.length === 0 && hit.kind === "job" && PROFILE_CHARS.has(hit.label);
     const section = collapse ? PROFILE_SECTION : hit.section;
     const key = `${hit.label}${SEPARATOR}${section}`;
     const chars = collapse

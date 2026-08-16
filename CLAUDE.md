@@ -1596,6 +1596,81 @@ routing a term-lookup question to `WHERE` instead of to the index — and that i
 the same hybrid-routing step the scalability analysis already concludes with.
 Nothing is wired in.
 
+### Phase 8c — the trim, measured and rejected; the profile, switched off
+
+**Two switches now, not one.** `NARROW` in `lib/retrieval.ts` is phase 7 -- a
+question naming a posting resolves to it and the pre-budget reranker runs.
+`COLLAPSE` is phase 8 -- a question naming none gets each posting's profile in
+place of its sections. They were one constant until the profile started
+answering questions that only varied the wording, which is a phase 8 problem and
+not a phase 7 one.
+
+**Shipping: `NARROW = true`, `COLLAPSE = false`, no trim.** That configuration
+scores **42 to 43 of 46** over three passes, 27/29 answerable... 27/31 with the
+two term-lookup questions counted, and every refusal class perfect.
+
+```
+guardrail       46/46, band still 0.3705 to 0.4040
+drift           0.0000
+evidence        36/47
+coverage        complete
+context         8,625 chars on average, 13.8 sections
+answers         42-43/46, 33/38 landed the same way three times
+```
+
+**The trim lost, and it is the cleanest loss in this file because retrieval said
+it was free.** The rule: score the sections the budget produced with the
+cross-encoder *after* the cut rather than before it, keep the best
+`SECTIONS_KEPT = 7`, and fall back to distance order when the best score is
+under `TRUST_SCORE = 0.25`.
+
+```
+                     sin trim      con trim
+answers, 3 runs      42-43 / 46    38-40 / 46
+sections               13.8          7.0
+context               8,625 ch      4,206 ch     -51%
+landed the same 3x     33/38         28/38
+evidence recall        35/45         35/45       identical
+```
+
+Same scope, same prompt, same model, one variable. On retrieval the trim is
+free: not one expected section is lost and the context halves, with broad
+questions going from 15,436 characters to 3,816. On answers it costs three to
+four questions, and the five that break are led by the comparisons:
+
+```
+good-fit                    3/3  ->  0/3
+best-fit                    3/3  ->  0/3
+roles-common                3/3  ->  1/3
+twin-interview-afficiency   3/3  ->  2/3
+twin-interview-fde          3/3  ->  2/3
+```
+
+**Section-level recall cannot see this failure, which is the finding.** No
+single section is the evidence for "which role fits me best" -- the question
+needs every posting present -- so the 45 hand-written evidence keys stayed at
+35/45 while the answers got worse. `coverage` is the metric that should have
+caught it and it is document-level, so cutting a posting's only section out of
+the context registers as nothing. The eval said free and the model said no.
+
+**The threshold is nearly inert and is kept only as what the measurement
+produced.** Cutting always by score scores the same 35/45 for 205 more
+characters; cutting by distance loses two sections. Its one real job was at
+`SECTIONS_KEPT = 5`, where it protected `fit-job7` (best score 0.1731) and
+`missing-job3` (0.2117) from a cross-encoder that reorders at random when it
+finds nothing convincing. Rank correlation does *not* separate the questions the
+cross-encoder helps from the ones it damages -- `interview-story-job4` sits at
+-0.64 and comes out fine -- but the best score does: above ~0.34 it agrees with
+the bi-encoder on every question measured.
+
+`trim()` stays exported and out of the answer path. `pnpm retrieve --rerank`
+runs it to show what it would have kept, labelled as a candidate.
+
+**And the same session measured what turning the scope off costs**, since the
+trim was first run without it. Same trim, scope off: **27 to 28 of 46**. Almost
+every question that failed was a scoped one, which is the size of what phase 7
+buys stated as a single number: eleven points.
+
 ### Phase 8b — the UI
 
 Real labels were the whole of this phase and there is nothing retrieval-shaped

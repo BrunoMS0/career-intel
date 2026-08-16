@@ -85,13 +85,92 @@ export async function resolveScope(query: string): Promise<string[]> {
  * needs the whole requirements list, not the three bullets that happened to
  * rank. The chunk is the key; the section is the payload.
  */
+/**
+ * ponytail: two switches rather than one, so a rule can be measured on its own.
+ *
+ * `NARROW` is phase 7: a question naming a posting resolves to it, so only that
+ * posting and the resume are in play and the pre-budget rerank runs.
+ * `COLLAPSE` is phase 8: a question naming none gets each posting's profile in
+ * place of its sections.
+ *
+ * They were one constant until the profile started answering questions that
+ * only varied the wording, which is a phase 8 problem and not a phase 7 one.
+ */
+export const NARROW = true;
+export const COLLAPSE = false;
+
+/**
+ * How many sections the candidate trim below would keep. Not in the answer path:
+ * `retrieve()` does not call `trim()`, because the rule lost. 7 is where the
+ * retrieval curve flattens -- keeping 7 costs no evidence at all and halves the
+ * context -- and that is exactly what makes it worth writing down: the answers
+ * got worse anyway.
+ */
+export const SECTIONS_KEPT = 7;
+
+/**
+ * Below this the cross-encoder's order is not worth following.
+ *
+ * The measured pattern: when its best score clears ~0.34 it agrees with the
+ * bi-encoder (rank correlation 0.27 to 1.00 over eight questions) and never
+ * damages the result. When its best score is low it found nothing convincing
+ * and its ordering is noise -- which is where `missing-job3` (best 0.2117) and
+ * `fit-job7` (0.1731) lose their evidence. Rank correlation itself does *not*
+ * separate the two populations: questions that come out fine sit at -0.64,
+ * worse than the ones that break.
+ *
+ * 0.25 rather than 0.34 because the trim only has to protect the tail: at
+ * SECTIONS_KEPT = 7 every threshold from 0.2 to 0.35 scores the same 28/45 with
+ * no losses, and this is the middle of that flat band.
+ */
+export const TRUST_SCORE = 0.25;
+
 export async function retrieve(query: string): Promise<RetrievedSection[]> {
-  const scope = await resolveScope(query);
+  const scope = NARROW ? await resolveScope(query) : [];
   const vector = toVector(await embedForQuery(query));
   const { perDocument } = await budget(scope);
   const chosen = scope.length > 0 ? await rerankChunks(query, vector, scope, perDocument) : null;
-  const sections = await search(vector, scope, perDocument, chosen);
-  return scope.length === 0 ? await collapseToProfiles(sections) : sections;
+  const found = await search(vector, scope, perDocument, chosen);
+  return COLLAPSE && scope.length === 0 ? await collapseToProfiles(found) : found;
+}
+
+/**
+ * A candidate rule, measured and not adopted. `retrieve()` does not call it;
+ * `pnpm retrieve --rerank` does, to show what it would have kept.
+ *
+ * The cross-encoder applied *after* the budget rather than before it, used to
+ * drop the tail rather than to reorder inside a document. On retrieval it is
+ * free: identical evidence, 35/45 with it and without, and half the context.
+ * On answers it costs 3 to 4 questions -- 42-43/46 without, 38-40/46 with --
+ * and the five that break are led by `good-fit`, `best-fit` and `roles-common`,
+ * the comparisons that need every posting present. Section-level recall cannot
+ * see that: no single section is the evidence for "which role fits me best",
+ * so the metric stayed flat while the answers got worse.
+ *
+ * The `trusted` branch is kept because it is what the measurement produced, and
+ * it is worth knowing it is nearly inert: cutting always by score scores the
+ * same 35/45 for 205 more characters. Its only real job was at SECTIONS_KEPT=5,
+ * where it protected `fit-job7` and `missing-job3` from a cross-encoder that
+ * reorders at random when its best score is low.
+ */
+export async function trim(query: string, sections: RetrievedSection[]) {
+  if (sections.length <= SECTIONS_KEPT) return { sections, scores: null, trusted: null };
+
+  const scores = await scorePassages(query, sections.map(passageFor));
+  const scored = sections.map((section, at) => ({ ...section, score: scores[at] }));
+  const trusted = Math.max(...scores) >= TRUST_SCORE;
+
+  // Trusted: the cross-encoder picks. Not trusted: it found nothing convincing,
+  // so the bi-encoder keeps the decision it already made.
+  const kept = [...scored]
+    .sort((a, b) => (trusted ? b.score - a.score : a.distance - b.distance))
+    .slice(0, SECTIONS_KEPT);
+
+  return {
+    sections: kept.sort((a, b) => a.distance - b.distance),
+    scores: scored,
+    trusted,
+  };
 }
 
 /**
