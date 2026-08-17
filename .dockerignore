@@ -1,0 +1,20 @@
+node_modules
+.next
+.git
+.cache
+.claude
+
+# Secrets. The image reads its configuration from the environment at run time,
+# and baking a key into a layer leaves it there for anyone who pulls the image.
+.env
+.env.*
+
+# Not part of the app: the eval harness, its caches and the scratch scripts.
+eval
+scripts
+db
+
+*.md
+Dockerfile
+.dockerignore
+docker-compose.yml

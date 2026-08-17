@@ -80,6 +80,7 @@ https://github.com/BrunoMS0/career-intel
 
 ```
 docker compose up -d                  # Postgres + pgvector
+docker compose --profile app up -d --build   # + the app in a container, :3000
 pnpm dev                              # app on :3000
 pnpm test                             # chunker and pdf tests
 pnpm inspect <file.pdf> [--text]      # how a PDF chunks under unpdf, without indexing it
@@ -1883,6 +1884,31 @@ holds an empty version of it; the only client-side gap is the `router.refresh()`
 after an upload, which lands in a few hundred milliseconds at the end of a
 minute-long ingest the button already spent spinning. A skeleton there would be
 decoration.
+
+**Done: the app runs in a container, and it is behind a profile.** `Dockerfile`
+is three stages on `node:22-alpine` with `output: "standalone"` in
+`next.config.ts`, which is what keeps `llama-cloud-services`, `unpdf` and the
+rest of `node_modules` out of the runtime layer — **212MB**. The compose service
+is `profiles: ["app"]`, so `docker compose up -d` still brings up Postgres alone
+and `pnpm dev` stays the loop; the container is
+`docker compose --profile app up -d --build`.
+
+Two things that would have bitten and are commented where they are:
+
+- **`lib/db.ts` throws at import when `DATABASE_URL` is unset, and `next build`
+  imports it** while collecting page data. It only works locally because Next
+  reads `.env`, which `.dockerignore` deliberately excludes. The build stage sets
+  a placeholder URL; postgres.js connects lazily so it is never dialled.
+- **The `DATABASE_URL` in `.env` is wrong inside the network.** It names the port
+  Postgres is *published* on for the host (`DB_PORT`, 5544 here); from another
+  container the service is `db` on 5432. Compose sets it explicitly rather than
+  passing the host one through.
+
+Verified against the running Postgres: `/api/health` returns
+`{"ok":true,"pgvector":"0.8.6","documents":8,"googleKey":true}` and the page
+renders with Geist, the dark tokens, all 8 documents, the derived openers and the
+radio pair — so the fonts, the CSS and the client bundle all made it into the
+traced output.
 
 A fenced block still renders, just unhighlighted. `AI Elements` also ships
 `shimmer` polymorphic over an `as` prop nothing passes, caching
