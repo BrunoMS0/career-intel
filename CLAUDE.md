@@ -1682,11 +1682,86 @@ that asserts on "Job #N" kept working. Showing the real name in the UI and in
 citations is now a rename with no measurement behind it — and it would still
 invalidate `eval/answers.json`, since the citation contract prints the label.
 
-What is left: the UI polish and the app Dockerfile that were always phase 6, the
-markdown rendering the answers still do not do, and an upload form that can set
-company and role title so a ninth document does not arrive identity-less. The
-"/" picker above already covers the part of this phase that users would feel —
-they pick a posting by its real name and never have to know it is Job #3.
+What is left: the UI polish and the app Dockerfile that were always phase 6, and
+an upload form that can set company and role title so a ninth document does not
+arrive identity-less. The "/" picker above already covers the part of this phase
+that users would feel — they pick a posting by its real name and never have to
+know it is Job #3.
+
+**Done: shadcn/ui and AI Elements are in, and the answers render markdown.**
+`components.json` is `radix-nova`, components live in `components/ui` and
+`components/ai-elements`, and `lib/utils.ts` holds `cn()`. Three AI Elements were
+added — `message`, `conversation`, `reasoning` — and the transcript in
+`app/workspace.tsx` is built from them. Nothing about the route, the prompt or
+the citation contract moved, so neither cache was invalidated.
+
+Two things worth knowing before adding more of either library:
+
+- **The catalogue does not match what a plan written from memory expects.**
+  `Response` no longer exists on its own; markdown rendering is `MessageResponse`
+  inside `message`, and it needs `@source "../node_modules/streamdown/dist/*.js"`
+  in `globals.css` or the markdown comes out unstyled — which reads as the
+  component failing rather than as missing CSS. `Actions` and `Branch` are
+  likewise folded into `message`, and `Loader` is gone (it 308s to shadcn's
+  `spinner`). `registry.ai-sdk.dev/<name>.json` lists a component's real
+  dependencies without installing anything, which is the cheap way to check.
+- **`shadcn init` switches dark mode from the system to a `.dark` class.** Every
+  `dark:` utility already in the tree silently stops following the system, and
+  nothing fails. `@custom-variant dark (@media (prefers-color-scheme: dark))`
+  plus the token block under the same media query restores the old behaviour. The
+  cost is that `MessageContent`'s `is-user:dark` goes inert, so the user bubble
+  is `bg-secondary` instead of inverted — worth less than a working dark mode.
+  It also finally fixed the font: `layout.tsx` had always loaded Geist through
+  `next/font` while `body { font-family: Arial }` in `globals.css` won.
+
+**The reasoning was in the stream the whole time, and the plan's premise for
+excluding it was wrong.** It had been written down that `gemma-4-31b-it` emits no
+reasoning tokens and that the stream does not carry them. Both are false:
+`sendReasoning` defaults to **true** in `toUIMessageStreamResponse()`, and
+`app/workspace.tsx` was filtering the parts out with `isTextUIPart`. Measured
+against the real route, one question:
+
+```
+ms to the first part of each type, POST /api/chat
+  reasoning-start / reasoning-delta      3,243
+  reasoning-end / text-start             43,666
+  finish                                47,537
+
+reasoning 5,928 chars      text 650 chars
+```
+
+`reasoning-end` and `text-start` share a timestamp, every time — the text begins
+when the thinking ends. So the wait was never 3 seconds to the first token; it
+was 3 seconds to the first token and **43 seconds to the first token the screen
+drew**, with 90% of the stream discarded. Two questions rendered end to end came
+back "Thought for 41 seconds" and "Thought for 118 seconds", which is also the
+honest range for how long an answer takes.
+
+Rendering it changes no text and invalidates nothing. Turning the thinking *off*
+would be a different decision, and it would invalidate `eval/answers.json`.
+
+It also explains a blank assistant bubble seen before the change: a request whose
+reasoning had started but whose text had not produced an `<article>` with nothing
+in it, no error and no spinner.
+
+**The plugin trim is the one measurable cost saving here.** AI Elements wires
+`{ cjk, code, math, mermaid }` into every `Streamdown`, which is shiki, katex and
+mermaid in the client bundle, for answers that are bullets and bold and a prompt
+that asks for nothing else. Dropped from `MessageResponse` and `ReasoningContent`
+and the four packages removed, `rm -rf .next && pnpm build` either way:
+
+```
+                     emitted client chunks
+with the plugins     401 files, 16,137 KB
+without              12 files,   1,460 KB
+```
+
+A fenced block still renders, just unhighlighted. `AI Elements` also ships
+`shimmer` polymorphic over an `as` prop nothing passes, caching
+`motion.create(element)` in a module-level Map that
+`react-hooks/static-components` fails the build over; `motion.p` directly is the
+whole of what it was asked for. `motion` itself is still a dependency for one
+shimmering label and a CSS keyframe would replace it — not done.
 
 Known and deliberate, not yet fixed:
 
@@ -1711,7 +1786,11 @@ Known and deliberate, not yet fixed:
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text. The guardrail inherits this:
   a follow-up is assessed on the wrong question's distances.
-- Answers render as plain text, so markdown shows raw `*` and `###`.
+- Citations are still raw `[Job #2 — REQUIREMENTS]` brackets in the transcript.
+  Turning them into chips is a client-side parse of the answer text plus the
+  identity already on the client; the excerpt behind a chip is not reachable
+  without putting the retrieved sections on the stream, which is a change to the
+  answer path and wants measuring first.
 - `query_logs` grows without bound and nothing reads it yet.
 - `query_logs.answered` is written before the model call, so it records "the
   guardrail let this through", not "the user got an answer". Three identical

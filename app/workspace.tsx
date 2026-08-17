@@ -1,9 +1,20 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isTextUIPart } from "ai";
+import { DefaultChatTransport, isReasoningUIPart, isTextUIPart } from "ai";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
 import { applyMention, mentionQuery, suggest } from "@/lib/mention";
 
 export type DocumentSummary = {
@@ -50,40 +61,58 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
       </aside>
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex-1 space-y-4 overflow-y-auto pb-4">
-          {messages.length === 0 && (
-            <div className="space-y-2 pt-8">
-              <p className="pb-2 text-sm text-neutral-500">Ask about your fit for these roles.</p>
-              {SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  onClick={() => ask(suggestion)}
-                  className="block w-full rounded-lg border border-neutral-200 px-3 py-2 text-left text-sm hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-          )}
+        <Conversation>
+          <ConversationContent className="px-0">
+            {messages.length === 0 && (
+              <div className="space-y-2 pt-8">
+                <p className="pb-2 text-sm text-muted-foreground">
+                  Ask about your fit for these roles.
+                </p>
+                {SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => ask(suggestion)}
+                    className="block w-full rounded-lg border px-3 py-2 text-left text-sm hover:bg-accent"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
 
-          {messages.map((message) => (
-            <article
-              key={message.id}
-              className={
-                message.role === "user"
-                  ? "ml-auto max-w-[80%] rounded-lg bg-neutral-900 px-3 py-2 text-sm text-white dark:bg-neutral-100 dark:text-neutral-900"
-                  : "max-w-[90%] text-sm leading-relaxed whitespace-pre-wrap"
-              }
-            >
-              {message.parts.filter(isTextUIPart).map((part, i) => (
-                <span key={i}>{part.text}</span>
-              ))}
-            </article>
-          ))}
+            {messages.map((message) => (
+              <Message key={message.id} from={message.role}>
+                <MessageContent>
+                  {message.parts.map((part, i) => {
+                    // Gemma spends most of a request here -- measured at 3.2s to
+                    // the first reasoning token against 43.7s to the first text
+                    // one, 5,928 characters against 650. It was always in the
+                    // stream (`sendReasoning` defaults to true) and always
+                    // discarded, which is what made the wait look like a stall.
+                    if (isReasoningUIPart(part)) {
+                      return (
+                        <Reasoning key={i} isStreaming={part.state === "streaming"}>
+                          <ReasoningTrigger />
+                          <ReasoningContent>{part.text}</ReasoningContent>
+                        </Reasoning>
+                      );
+                    }
+                    if (isTextUIPart(part)) {
+                      return <MessageResponse key={i}>{part.text}</MessageResponse>;
+                    }
+                    return null;
+                  })}
+                </MessageContent>
+              </Message>
+            ))}
 
-          {status === "submitted" && <p className="text-sm text-neutral-500">Searching…</p>}
-          {error && <p className="text-sm text-red-600">{error.message}</p>}
-        </div>
+            {status === "submitted" && (
+              <p className="text-sm text-muted-foreground">Searching…</p>
+            )}
+            {error && <p className="text-sm text-destructive">{error.message}</p>}
+          </ConversationContent>
+          <ConversationScrollButton />
+        </Conversation>
 
         <Composer
           documents={documents.filter((document) => document.kind === "job")}
