@@ -133,6 +133,25 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* The default bar is a wide light slab that reads as chrome from another
+       app. Firefox and the rest take these two; WebKit needs the rules below. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0.5rem;
+    height: 0.5rem;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
   }
   body {
     @apply bg-background text-foreground;
