@@ -14,6 +14,17 @@ COLLAPSE  = false    broad questions receive sections, not document profiles
 trim               out of the answer path -- measured and rejected, see section 6
 ```
 
+Ingest calls LlamaParse and unpdf. Structured extraction used to run there too
+and no longer does: nothing reads `documents.profile` while `COLLAPSE` is off,
+so it was a hosted round trip per upload for no effect on any answer.
+`pnpm profiles <dir>` still fills those columns by hand.
+
+**The prompt names nothing in the corpus**, deliberately. It used to illustrate
+one rule with "Job #1's dress code", which is one of the 46 questions the
+harness grades — a prompt teaching the answer to a case it is then scored on.
+The example is invented now ("a posting's parking policy"; no document contains
+the word). The score did not move: 42–43 of 46 before and after.
+
 | piece | choice |
 | --- | --- |
 | Embeddings | `gemini-embedding-001`, 1536 dims, asymmetric `taskType` |
@@ -88,12 +99,20 @@ phases tried to close.
 
 | metric | value |
 | --- | --- |
-| **Valid citations** | **532 of 532 = 100%** |
+| **Valid citations** | **546 of 546 = 100%** |
 | Invented citations | **0** |
+| Citations that truncate the label | 1 |
 | Answers with no citation at all | 2 of 93 |
 
 A citation is valid when it names a section the model was actually shown. Zero
-invented across 532 citations over three full passes.
+invented across 546 citations over three full passes.
+
+Truncation is the softer failure and it is what the citation rule was rewritten
+for. Seven section names carry a date or a second dash of their own
+(`My resume — Data Analytics | March 2026 – Present`), and the model used to
+drop the suffix. The prompt now asks for the bracketed label copied whole,
+"including its capitalisation and anything after a dash or a pipe", and
+truncations went from 5 to 1.
 
 ---
 
@@ -138,13 +157,14 @@ gets read.
 
 | question | clean | why |
 | --- | --- | --- |
-| `remote-jobs` | 0/3 | the check demands all 7 postings named and `lib/prompt.ts` allows 4 bullets. The check and the prompt contradict each other |
+| `remote-jobs` | 0/3 | the check demands all 7 postings named and `lib/prompt.ts` allows 4 bullets. The check and the prompt contradict each other; the answer opens "Only Job #6 is remote", which is correct |
 | `summarize` | 0/3 | the check demands an employer name; the one-page resume summarises by capability. The check is what is wrong |
-| `llm-rag-job4` | 1/3 | a compound question ("LLMs **and** RAG"). The prompt says "if it is not there, say so **and stop**", and the model stops before answering the half it can |
+| `llm-rag-job4` | 0–1/3 | a compound question ("LLMs **and** RAG"). The prompt says "if it is not there, say so **and stop**", and the model stops before answering the half it can. It has come back 1/3 and 0/3 on byte-identical context, so it is also the noisiest question in the set |
 | `interview-prep-job3` | 2/3 | sampling |
+| `twin-missing-afficiency` | 2/3 | sampling |
 
-None of the four is a retrieval failure. Two are the test, one is the prompt,
-one is the model rolling dice.
+None of them is a retrieval failure. Two are the test, one is the prompt, and
+the rest is the model rolling dice.
 
 ---
 
