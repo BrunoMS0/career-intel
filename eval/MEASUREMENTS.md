@@ -195,7 +195,12 @@ Sending 16,000 characters costs the same as sending nothing. The ~50 seconds are
 characters a second that is the 50 s.
 
 Practical consequence: **trimming context does not improve latency.** What would
-is a paid tier, streaming to the user, or shorter answers.
+is a paid tier or shorter answers.
+
+One caveat on these numbers: they were taken with `generateText`, so they are
+time-to-complete. The chat route uses `streamText` and the client `useChat`, so
+a real user sees the first token far sooner than 50 s — what the table measures
+is when the answer finishes, not when it starts.
 
 What the refusal threshold does buy: an off-topic question answers in **0.5
 seconds instead of 50**, because it never reaches the model. 8 of 46 land there.
