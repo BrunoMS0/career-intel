@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const documents = await sql<DocumentSummary[]>`
-    select d.id, d.kind, d.label, count(c.id)::int as chunks
+    select d.id, d.kind, d.label, d.company, d.role_title, count(c.id)::int as chunks
     from documents d
     left join chunks c on c.document_id = d.id
     group by d.id

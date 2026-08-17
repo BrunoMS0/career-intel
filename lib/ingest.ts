@@ -56,6 +56,20 @@ export async function ingest(input: {
   file: File;
   kind: DocumentKind;
   label: string;
+  /**
+   * How a person would name this posting. Optional, and null is a working
+   * state rather than a broken one: `resolveScope` still matches the label, so
+   * a document with no identity behaves exactly as every document did before
+   * phase 7. What it loses is being findable by company or title -- which is
+   * how people actually ask -- so the upload form asks for them.
+   *
+   * Not parsed out of the document, deliberately. Five of the seven postings
+   * state "**Company:**" in their first section, Job #6 states it three
+   * sections later and Job #7 never states it at all, so the extraction rule
+   * would be three rules and a fallback. The person uploading already knows.
+   */
+  company?: string | null;
+  roleTitle?: string | null;
 }) {
   const data = new Uint8Array(await input.file.arrayBuffer());
   const [markdown, verbatim] = await Promise.all([
@@ -85,9 +99,24 @@ export async function ingest(input: {
         ? await tx<{ label: string }[]>`delete from documents where kind = 'resume' returning label`
         : [];
 
+    // documents.profile and documents.extract are left null on purpose.
+    //
+    // Structured extraction used to run here, in parallel with the parse, and it
+    // fed a rule that collapsed each posting to a one-paragraph profile on broad
+    // questions. That rule is switched off: it halved the context without moving
+    // the score, and then lost instances -- Job #2 lists "Canvas, timeline, or
+    // media-editor work: Pixi, Fabric, Remotion, WebGL" and the extraction kept
+    // only the category, so asked which postings mention WebGL the app answered
+    // none. Perfectly grounded in what it was shown, and false.
+    //
+    // With nothing reading those columns, an extraction call on every upload was
+    // a hosted round trip and credits spent for no effect on any answer.
+    // `pnpm profiles <dir>` fills them by hand for whoever builds the routing
+    // step that would finally use them.
     const [document] = await tx<{ id: string }[]>`
-      insert into documents (kind, label, filename, content)
-      values (${input.kind}, ${input.label}, ${input.file.name}, ${markdown})
+      insert into documents (kind, label, company, role_title, filename, content)
+      values (${input.kind}, ${input.label}, ${input.company ?? null},
+              ${input.roleTitle ?? null}, ${input.file.name}, ${markdown})
       returning id
     `;
 

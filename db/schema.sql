@@ -9,6 +9,14 @@ create table documents (
   -- User-facing handle, e.g. "Job #2". Unique because queries scope by it:
   -- two documents sharing a label would make "Job #2" ambiguous.
   label      text not null unique,
+  -- How a person would name this posting instead: "Afficiency", "Agentic AI
+  -- Engineer". resolveScope matches these as well as the label, because nobody
+  -- outside this repo types "Job #3" and a question that names the company
+  -- otherwise widens to the whole corpus. Nullable and filled in by hand from
+  -- db/identities.sql: they are not in the parse, and Job #6 and Job #7 do not
+  -- state their company where the other five do.
+  company    text,
+  role_title text,
   filename   text not null,
   content    text not null,
   created_at timestamptz not null default now()

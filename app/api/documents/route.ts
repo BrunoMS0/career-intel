@@ -50,13 +50,59 @@ export async function POST(request: Request) {
     return Response.json({ error: "label is required" }, { status: 400 });
   }
 
+  // Checked here rather than left to the unique index, because reaching the
+  // index costs a LlamaParse round trip and an embedding call for every chunk
+  // first -- a duplicate label would spend all of that to fail on the insert.
+  //
+  // Case-insensitive, which is stricter than the index on purpose: resolveScope
+  // squashes case, so "Job #1" and "job #1" are one scope key and a question
+  // naming either would pull both documents. The index stays as the race guard
+  // below.
+  //
+  // A resume is exempt against the resume already indexed, since uploading one
+  // replaces it inside the same transaction and frees whatever label it held.
+  const clash = await sql`
+    select 1 from documents
+    where lower(label) = lower(${label.trim()})
+      and ${kind === "resume" ? sql`kind <> 'resume'` : sql`true`}
+  `;
+  if (clash.length > 0) {
+    return Response.json({ error: `label "${label.trim()}" is already taken` }, { status: 409 });
+  }
+
+  const identity = (field: unknown) =>
+    // Only postings carry one. The resume is in scope for every question, so an
+    // identity would be dead data that the "/" menu would then have to hide.
+    kind === "job" && typeof field === "string" && field.trim() ? field.trim() : null;
+
+  const company = identity(form.get("company"));
+  const roleTitle = identity(form.get("role_title"));
+
   try {
     const result = await ingest({
       file,
       kind: kind as DocumentKind,
       label: label.trim(),
+      company,
+      roleTitle,
     });
-    return Response.json(result, { status: 201 });
+    // Said, not enforced: an anonymous posting works, it is just only findable
+    // by a label nobody outside this app would type.
+    const anonymous = kind === "job" && !company && !roleTitle;
+    return Response.json(
+      anonymous
+        ? {
+            ...result,
+            warning: [
+              result.warning,
+              `No company or role title, so this posting only answers to "${label.trim()}".`,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          }
+        : result,
+      { status: 201 },
+    );
   } catch (error) {
     if (error instanceof IngestError) {
       return Response.json({ error: error.message }, { status: error.status });

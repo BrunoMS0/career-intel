@@ -1,6 +1,14 @@
 import { sql } from "./db.ts";
 import { embedForQuery, toVector } from "./embedding.ts";
 import type { DocumentKind } from "./ingest.ts";
+import { profileExcerpt, type Extraction } from "./extract.ts";
+import {
+  CANDIDATES_PER_DOCUMENT,
+  passageFor,
+  pickPerDocument,
+  scorePassages,
+} from "./rerank.ts";
+import { scopeFor, type DocumentIdentity } from "./scope.ts";
 
 export type RetrievedSection = {
   label: string;
@@ -53,27 +61,12 @@ export const MAX_FOCUSED_DOCUMENTS = 3;
  */
 export const RESUME_CHUNKS = 4;
 
-const squash = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-/**
- * Finds which documents a question is about, so "How does my experience align
- * with Job #2?" reads Job #2 and not the other five postings.
- *
- * Labels are matched literally rather than inferred by a model: they are short,
- * unique and user-chosen, and a wrong guess here silently answers about the
- * wrong job. Punctuation and spacing are squashed so "Job #2", "job 2" and
- * "JOB2" all land.
- *
- * ponytail: substring match, so with more than nine postings "Job #1" would
- * also match a question about "Job #12". Match on word boundaries if the corpus
- * ever gets that big.
- */
+/** The rule itself is in lib/scope.ts; this is the query that feeds it. */
 export async function resolveScope(query: string): Promise<string[]> {
-  const documents = await sql<{ label: string }[]>`
-    select label from documents where kind = 'job'
+  const documents = await sql<DocumentIdentity[]>`
+    select label, company, role_title from documents where kind = 'job'
   `;
-  const asked = squash(query);
-  return documents.map((d) => d.label).filter((label) => asked.includes(squash(label)));
+  return scopeFor(query, documents);
 }
 
 /**
@@ -92,17 +85,164 @@ export async function resolveScope(query: string): Promise<string[]> {
  * needs the whole requirements list, not the three bullets that happened to
  * rank. The chunk is the key; the section is the payload.
  */
+/**
+ * ponytail: two switches rather than one, so a rule can be measured on its own.
+ *
+ * `NARROW` is phase 7: a question naming a posting resolves to it, so only that
+ * posting and the resume are in play and the pre-budget rerank runs.
+ * `COLLAPSE` is phase 8: a question naming none gets each posting's profile in
+ * place of its sections.
+ *
+ * They were one constant until the profile started answering questions that
+ * only varied the wording, which is a phase 8 problem and not a phase 7 one.
+ */
+export const NARROW = true;
+export const COLLAPSE = false;
+
+/**
+ * How many sections the candidate trim below would keep. Not in the answer path:
+ * `retrieve()` does not call `trim()`, because the rule lost. 7 is where the
+ * retrieval curve flattens -- keeping 7 costs no evidence at all and halves the
+ * context -- and that is exactly what makes it worth writing down: the answers
+ * got worse anyway.
+ */
+export const SECTIONS_KEPT = 7;
+
+/**
+ * Below this the cross-encoder's order is not worth following.
+ *
+ * The measured pattern: when its best score clears ~0.34 it agrees with the
+ * bi-encoder (rank correlation 0.27 to 1.00 over eight questions) and never
+ * damages the result. When its best score is low it found nothing convincing
+ * and its ordering is noise -- which is where `missing-job3` (best 0.2117) and
+ * `fit-job7` (0.1731) lose their evidence. Rank correlation itself does *not*
+ * separate the two populations: questions that come out fine sit at -0.64,
+ * worse than the ones that break.
+ *
+ * 0.25 rather than 0.34 because the trim only has to protect the tail: at
+ * SECTIONS_KEPT = 7 every threshold from 0.2 to 0.35 scores the same 28/45 with
+ * no losses, and this is the middle of that flat band.
+ */
+export const TRUST_SCORE = 0.25;
+
 export async function retrieve(query: string): Promise<RetrievedSection[]> {
-  const scope = await resolveScope(query);
+  const scope = NARROW ? await resolveScope(query) : [];
   const vector = toVector(await embedForQuery(query));
   const { perDocument } = await budget(scope);
+  const chosen = scope.length > 0 ? await rerankChunks(query, vector, scope, perDocument) : null;
+  const found = await search(vector, scope, perDocument, chosen);
+  return COLLAPSE && scope.length === 0 ? await collapseToProfiles(found) : found;
+}
 
+/**
+ * A candidate rule, measured and not adopted. `retrieve()` does not call it;
+ * `pnpm retrieve --rerank` does, to show what it would have kept.
+ *
+ * The cross-encoder applied *after* the budget rather than before it, used to
+ * drop the tail rather than to reorder inside a document. On retrieval it is
+ * free: identical evidence, 35/45 with it and without, and half the context.
+ * On answers it costs 3 to 4 questions -- 42-43/46 without, 38-40/46 with --
+ * and the five that break are led by `good-fit`, `best-fit` and `roles-common`,
+ * the comparisons that need every posting present. Section-level recall cannot
+ * see that: no single section is the evidence for "which role fits me best",
+ * so the metric stayed flat while the answers got worse.
+ *
+ * The `trusted` branch is kept because it is what the measurement produced, and
+ * it is worth knowing it is nearly inert: cutting always by score scores the
+ * same 35/45 for 205 more characters. Its only real job was at SECTIONS_KEPT=5,
+ * where it protected `fit-job7` and `missing-job3` from a cross-encoder that
+ * reorders at random when its best score is low.
+ */
+export async function trim(query: string, sections: RetrievedSection[]) {
+  if (sections.length <= SECTIONS_KEPT) return { sections, scores: null, trusted: null };
+
+  const scores = await scorePassages(query, sections.map(passageFor));
+  const scored = sections.map((section, at) => ({ ...section, score: scores[at] }));
+  const trusted = Math.max(...scores) >= TRUST_SCORE;
+
+  // Trusted: the cross-encoder picks. Not trusted: it found nothing convincing,
+  // so the bi-encoder keeps the decision it already made.
+  const kept = [...scored]
+    .sort((a, b) => (trusted ? b.score - a.score : a.distance - b.distance))
+    .slice(0, SECTIONS_KEPT);
+
+  return {
+    sections: kept.sort((a, b) => a.distance - b.distance),
+    scores: scored,
+    trusted,
+  };
+}
+
+/**
+ * A question naming no posting gets each posting's profile instead of its three
+ * sections. The resume keeps its sections.
+ *
+ * The asymmetry is the point and it is not a hedge. Cost grows with the number
+ * of *postings* -- there is exactly one resume however large the corpus gets --
+ * so collapsing the postings is what moves the wall, and collapsing the resume
+ * would only take detail away from "summarize my experience", which needs the
+ * employer entries and pays nothing for them at scale.
+ *
+ * Distances are preserved, and deliberately: the guardrail reads the nearest
+ * returned section, a profile is not embedded and has no distance of its own, so
+ * the profile inherits the best distance among the sections it replaces. That
+ * keeps the threshold measuring exactly what it measured before -- how near the
+ * question came to any real text -- rather than a number invented here.
+ *
+ * A document with no profile keeps its sections, so an un-extracted upload
+ * degrades to the old behaviour instead of vanishing from the answer.
+ */
+async function collapseToProfiles(sections: RetrievedSection[]): Promise<RetrievedSection[]> {
+  const labels = [...new Set(sections.filter((s) => s.kind === "job").map((s) => s.label))];
+  if (labels.length === 0) return sections;
+
+  const rows = await sql<{ label: string; profile: string | null; extract: Extraction | null }[]>`
+    select label, profile, extract from documents where label = any(${labels})
+  `;
+  const profiles = new Map(rows.map((row) => [row.label, profileExcerpt(row.extract, row.profile)]));
+
+  const kept: RetrievedSection[] = sections.filter(
+    (section) => section.kind !== "job" || !profiles.get(section.label),
+  );
+  for (const label of labels) {
+    const content = profiles.get(label);
+    if (!content) continue;
+    const own = sections.filter((section) => section.label === label);
+    const nearest = own.reduce((best, section) => (section.distance < best.distance ? section : best));
+    kept.push({
+      label,
+      kind: "job",
+      section: PROFILE_SECTION,
+      content,
+      distance: nearest.distance,
+      spread: nearest.spread,
+    });
+  }
+  return kept.sort((a, b) => a.distance - b.distance);
+}
+
+/**
+ * How a profile is labelled in the prompt and therefore in every citation. Short
+ * and literal, because the citation check matches section names by containment
+ * and the model has to be able to reproduce it.
+ */
+export const PROFILE_SECTION = "profile";
+
+function search(
+  vector: string,
+  scope: string[],
+  perDocument: number,
+  chosen: string[] | null,
+) {
   return sql<RetrievedSection[]>`
     with ranked as (${rankChunks(vector, scope, perDocument)}),
     picked as (
       select document_id, section, min(distance) as distance
       from ranked
-      where rank <= budget
+      -- The cross-encoder replaces which chunks fill the budget, never its size
+      -- and never the distance the section is returned with: the guardrail reads
+      -- that distance, and a relevance score is not on the same scale.
+      where ${chosen ? sql`id = any(${chosen}::uuid[])` : sql`rank <= budget`}
       group by document_id, section
     ),
     -- Over every chunk, not just the picked ones: the question is how flat the
@@ -126,6 +266,41 @@ export async function retrieve(query: string): Promise<RetrievedSection[]> {
     group by d.label, d.kind, p.section, p.distance, s.spread
     order by p.distance
   `;
+}
+
+/**
+ * Which chunks fill the budget, decided by a cross-encoder instead of by
+ * distance. Returns their ids; the caller's query does the rest exactly as it
+ * did before, so the section still carries the bi-encoder's distance.
+ *
+ * Scoped questions only, and that is the whole finding — measured phase 7 with
+ * `pnpm eval --rerank`, written up in CLAUDE.md. Reranking everything scores
+ * 36/45 and reranking only what `resolveScope` resolved scores 39/45, because a
+ * cross-encoder ranks by whether a passage *affirms* the query. That is what a
+ * question about one posting wants and the opposite of what "which of these
+ * jobs are remote?" needs: asked that, it kept the one header saying "Remote"
+ * and dropped the five stating a city, which are the postings that answer no.
+ *
+ * So the field has to be narrow before this runs, which is also why phase 7 did
+ * scope resolution first.
+ */
+async function rerankChunks(
+  query: string,
+  vector: string,
+  scope: string[],
+  perDocument: number,
+) {
+  const candidates = await sql<
+    { id: string; label: string; section: string; content: string; budget: number }[]
+  >`
+    with ranked as (${rankChunks(vector, scope, perDocument)})
+    select id, label, section, content, budget::int
+    from ranked where rank <= ${CANDIDATES_PER_DOCUMENT}
+  `;
+  const scores = await scorePassages(query, candidates.map(passageFor));
+  return pickPerDocument(
+    candidates.map((candidate, at) => ({ ...candidate, score: scores[at] })),
+  ).map((candidate) => candidate.id);
 }
 
 /** How many documents a question puts in play, and the budget that implies. */
@@ -152,9 +327,11 @@ async function budget(scope: string[]) {
  */
 function rankChunks(vector: string, scope: string[], perDocument: number) {
   return sql`
-    select c.document_id,
+    select c.id,
+           c.document_id,
            c.section,
            c.position,
+           c.content,
            length(c.content) as chars,
            d.label,
            d.kind,
@@ -178,8 +355,16 @@ export type RankedChunk = {
   position: number;
   chars: number;
   distance: number;
+  /** Position by distance inside its own document. */
   rank: number;
-  /** Within its document's budget, so this chunk is one of the search hits. */
+  /**
+   * This chunk is one of the search hits, meaning `retrieve()` really returns
+   * the section around it. Not the same as `rank <= budget`: on a question that
+   * resolves a scope the cross-encoder reorders the candidates first, so a chunk
+   * ranked 7th by distance can be picked and one ranked 3rd can be dropped.
+   * Computed from the same call `retrieve()` makes, not re-derived, because an
+   * inspector that disagrees with the retriever is worse than none.
+   */
   picked: boolean;
 };
 
@@ -189,13 +374,18 @@ export type RankedChunk = {
  * stages can be read on a terminal instead of inferred from the output.
  */
 export async function explainRetrieval(query: string) {
-  const scope = await resolveScope(query);
+  // NARROW, not resolveScope directly: with it off every question is unscoped
+  // and the inspector has to say so, rather than reporting a scope that the
+  // retriever then ignores.
+  const scope = NARROW ? await resolveScope(query) : [];
   const vector = toVector(await embedForQuery(query));
   const limits = await budget(scope);
+  const chosen = scope.length > 0 ? await rerankChunks(query, vector, scope, limits.perDocument) : null;
+  const picked = new Set(chosen ?? []);
 
-  const chunks = await sql<RankedChunk[]>`
+  const chunks = await sql<(RankedChunk & { id: string })[]>`
     with ranked as (${rankChunks(vector, scope, limits.perDocument)})
-    select label, kind, section, position, chars,
+    select id, label, kind, section, position, chars,
            distance::float8 as distance,
            rank::int as rank,
            (rank <= budget) as picked
@@ -203,5 +393,14 @@ export async function explainRetrieval(query: string) {
     order by label, rank
   `;
 
-  return { scope, limits, chunks };
+  return {
+    scope,
+    limits,
+    /** True when the cross-encoder chose the hits, so `rank` is not the reason. */
+    reranked: chosen !== null,
+    chunks: chunks.map((chunk) => ({
+      ...chunk,
+      picked: chosen ? picked.has(chunk.id) : chunk.picked,
+    })),
+  };
 }
