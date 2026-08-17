@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isReasoningUIPart, isTextUIPart, type UIMessage } from "ai";
-import { SearchXIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, RefreshCwIcon, SearchXIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import {
@@ -10,7 +10,13 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
-import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import {
+  Message,
+  MessageAction,
+  MessageActions,
+  MessageContent,
+  MessageResponse,
+} from "@/components/ai-elements/message";
 import {
   Reasoning,
   ReasoningContent,
@@ -69,6 +75,30 @@ const CITATION_COMPONENTS = {
 };
 
 /**
+ * Copies the answer as the model wrote it, brackets and all.
+ *
+ * Not what the chips display: `[Job #4 — EXPERIENCE]` is the string the corpus,
+ * `query_logs` and every eval expectation speak, and a citation pasted into a
+ * mail or a note is worth more when it can be traced back to one of them. The
+ * parenthesised company is a reading aid, not the answer.
+ */
+function CopyAnswer({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <MessageAction tooltip={copied ? "Copied" : "Copy answer"} onClick={() => void copy()}>
+      {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+    </MessageAction>
+  );
+}
+
+/**
  * The guardrail's refusal, which is not an answer and should not look like one.
  *
  * It is a different event from the rest of the transcript: no model ran, the
@@ -89,7 +119,7 @@ function Refusal({ text }: { text: string }) {
 }
 
 export function Workspace({ documents }: { documents: DocumentSummary[] }) {
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, sendMessage, regenerate, status, error } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
 
@@ -131,8 +161,16 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
               </div>
             )}
 
-            {messages.map((message) => {
+            {messages.map((message, index) => {
               const answer = answerText(message);
+              // A refusal has nothing to retry: no model ran, so asking again
+              // recomputes the same distance and returns the same fixed string.
+              // And retry only on the newest answer, because regenerating an
+              // older one throws away every turn after it without saying so.
+              const retryable =
+                message.role === "assistant" &&
+                !isRefusal(answer) &&
+                index === messages.length - 1;
 
               return (
                 <Message key={message.id} from={message.role}>
@@ -167,6 +205,25 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
                       })
                     )}
                   </MessageContent>
+
+                  {/* Nothing to act on while it streams, and nothing to act on
+                      for a refusal either -- it is chrome, not an answer. */}
+                  {message.role === "assistant" && !busy && !isRefusal(answer) && answer !== "" && (
+                    <MessageActions>
+                      <CopyAnswer text={answer} />
+                      {retryable && (
+                        // The same question with the same context has been
+                        // measured coming back clean 1 time in 3, so asking again
+                        // is a real move here and not a workaround for an error.
+                        <MessageAction
+                          tooltip="Ask again"
+                          onClick={() => void regenerate({ messageId: message.id })}
+                        >
+                          <RefreshCwIcon className="size-3.5" />
+                        </MessageAction>
+                      )}
+                    </MessageActions>
+                  )}
                 </Message>
               );
             })}

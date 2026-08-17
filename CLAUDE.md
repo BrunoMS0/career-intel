@@ -1795,6 +1795,29 @@ Two rules in it that are not obvious and are tested:
   EXPERIENCE` costs six characters and needs no hover. Found by asking a
   question the three cached ones did not cover.
 
+**Done: copy and ask-again, and both are narrower than they look.** `MessageActions`
+sits under an assistant answer once it is finished. Three conditions on it, each
+of which is the interesting part:
+
+- **Copy puts the answer on the clipboard as the model wrote it**, brackets and
+  all -- `[Job #2 — Mid-Level AI Product / Creative-Tools Engineer]`, not the
+  `Job #2 (eJam) — …` the chip displays. The parenthesised company is a reading
+  aid; the label is what the corpus, `query_logs` and every eval expectation
+  speak, so a citation pasted somewhere else stays traceable. Verified by
+  intercepting `writeText`: the screen and the clipboard genuinely differ.
+- **A refusal gets no actions at all.** Retrying one recomputes the same distance
+  and returns the same fixed string without a model call, so the button would be
+  a no-op dressed as a choice.
+- **Ask-again only on the newest answer**, because `regenerate({ messageId })`
+  on an older one drops every turn after it with nothing on screen saying so.
+
+`regenerate` needed no route change, which was worth checking rather than
+assuming: the trigger changes to `regenerate-message` but the request still
+carries the same last user message, so `latestQuestion()` finds the same text.
+Confirmed in `query_logs` -- the retry logged "How much does Job #2 pay?" at
+0.3296, the same question and the same distance, and replaced the answer in place
+instead of appending a turn.
+
 A fenced block still renders, just unhighlighted. `AI Elements` also ships
 `shimmer` polymorphic over an `as` prop nothing passes, caching
 `motion.create(element)` in a module-level Map that
