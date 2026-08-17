@@ -315,7 +315,11 @@ into a structure would introduce the normalisation failure it was meant to
 prevent.
 
 **The reranker was measured and it loses as specified — phase 7. Not
-connected.** `lib/rerank.ts` scores the bi-encoder's top 10 per document with
+connected** *(true when written, and no longer: phase 8c shipped the scoped
+variant behind `NARROW`, so `retrieve()` does call Cohere whenever
+`resolveScope` resolves. Read the phase 8c entry before acting on this one —
+this paragraph describes the rule that reranks* everything*, which is still the
+one that lost.)* `lib/rerank.ts` scores the bi-encoder's top 10 per document with
 Cohere `rerank-v3.5` and applies the same budget to the new order. `pnpm eval
 --rerank` caches the scores in `eval/rerank.json` aligned to the same snapshot
 as the distances, so both rules are replayed over identical numbers, nothing was
