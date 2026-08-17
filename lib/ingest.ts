@@ -4,7 +4,6 @@ import { enrich, unlabeledShare } from "./chunk.ts";
 import { chunkMarkdown } from "./chunk-markdown.ts";
 import { sql } from "./db.ts";
 import { embedForIndex, toVector } from "./embedding.ts";
-import { extractDocument } from "./extract.ts";
 import {
   compareFidelity,
   extractOrderedText,
@@ -73,15 +72,11 @@ export async function ingest(input: {
   roleTitle?: string | null;
 }) {
   const data = new Uint8Array(await input.file.arrayBuffer());
-  const [markdown, verbatim, extracted] = await Promise.all([
+  const [markdown, verbatim] = await Promise.all([
     extractOrderedText(data, input.file.name, PARSE_MODE, {
       system_prompt_append: STRUCTURE_INSTRUCTION,
     }),
     extractVerbatim(data).catch(() => ""),
-    // Deliberately not fatal. A document with no profile answers from its
-    // sections exactly as every document did before, so a hosted extraction
-    // being down costs breadth-question context and not the upload.
-    extractDocument(data, input.file.name, input.kind).catch(() => null),
   ]);
 
   const chunks = chunkMarkdown(markdown);
@@ -104,12 +99,24 @@ export async function ingest(input: {
         ? await tx<{ label: string }[]>`delete from documents where kind = 'resume' returning label`
         : [];
 
+    // documents.profile and documents.extract are left null on purpose.
+    //
+    // Structured extraction used to run here, in parallel with the parse, and it
+    // fed a rule that collapsed each posting to a one-paragraph profile on broad
+    // questions. That rule is switched off: it halved the context without moving
+    // the score, and then lost instances -- Job #2 lists "Canvas, timeline, or
+    // media-editor work: Pixi, Fabric, Remotion, WebGL" and the extraction kept
+    // only the category, so asked which postings mention WebGL the app answered
+    // none. Perfectly grounded in what it was shown, and false.
+    //
+    // With nothing reading those columns, an extraction call on every upload was
+    // a hosted round trip and credits spent for no effect on any answer.
+    // `pnpm profiles <dir>` fills them by hand for whoever builds the routing
+    // step that would finally use them.
     const [document] = await tx<{ id: string }[]>`
-      insert into documents (kind, label, company, role_title, filename, content, profile, extract)
+      insert into documents (kind, label, company, role_title, filename, content)
       values (${input.kind}, ${input.label}, ${input.company ?? null},
-              ${input.roleTitle ?? null}, ${input.file.name}, ${markdown},
-              ${extracted?.profile ?? null},
-              ${extracted ? tx.json(extracted.extract as never) : null})
+              ${input.roleTitle ?? null}, ${input.file.name}, ${markdown})
       returning id
     `;
 
