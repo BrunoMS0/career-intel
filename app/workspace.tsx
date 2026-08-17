@@ -24,6 +24,11 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Spinner } from "@/components/ui/spinner";
 import { linkCitations } from "@/lib/citation";
 import { isRefusal } from "@/lib/guardrail";
 import { applyMention, mentionQuery, suggest } from "@/lib/mention";
@@ -289,8 +294,13 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
               );
             })}
 
+            {/* Only the first few seconds: the reasoning starts streaming at
+                about 3s and takes over from here. */}
             {status === "submitted" && (
-              <p className="text-sm text-muted-foreground">Searching…</p>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner />
+                Searching…
+              </p>
             )}
             {error && <p className="text-sm text-destructive">{error.message}</p>}
           </ConversationContent>
@@ -380,7 +390,7 @@ function Composer({
         onAsk(text);
         setText("");
       }}
-      className="relative flex gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-800"
+      className="relative flex gap-2 border-t pt-4"
     >
       {open && (
         <ul
@@ -389,7 +399,7 @@ function Composer({
           // The click would otherwise blur the box first, and pick() would have
           // no caret left to insert at.
           onMouseDown={(event) => event.preventDefault()}
-          className="absolute bottom-full left-0 z-10 mb-2 max-h-64 w-80 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          className="absolute bottom-full left-0 z-10 mb-2 max-h-64 w-80 overflow-y-auto rounded-lg border bg-popover py-1 text-popover-foreground shadow-lg"
         >
           {matches.map((document, index) => (
             <li key={document.id}>
@@ -400,12 +410,12 @@ function Composer({
                 onClick={() => pick(document)}
                 onMouseEnter={() => setActive(index)}
                 className={`block w-full px-3 py-1.5 text-left ${
-                  index === highlighted ? "bg-neutral-100 dark:bg-neutral-800" : ""
+                  index === highlighted ? "bg-accent text-accent-foreground" : ""
                 }`}
               >
                 <span className="text-sm">{document.label}</span>
                 {identity(document) && (
-                  <span className="block truncate text-xs text-neutral-500">
+                  <span className="block truncate text-xs text-muted-foreground">
                     {identity(document)}
                   </span>
                 )}
@@ -415,7 +425,7 @@ function Composer({
         </ul>
       )}
 
-      <input
+      <Input
         ref={box}
         value={text}
         onChange={(event) => {
@@ -444,26 +454,22 @@ function Composer({
         // No hardcoded label here either: the openers above are built from the
         // corpus, and this used to name a posting that need not exist.
         placeholder="Ask about your fit for a role — type / to pick one"
-        className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-950"
+        className="h-10 flex-1"
       />
-      <button
-        type="submit"
-        disabled={busy || !text.trim()}
-        className="rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
-      >
-        Ask
-      </button>
+      <Button type="submit" className="h-10" disabled={busy || !text.trim()}>
+        {busy ? <Spinner /> : "Ask"}
+      </Button>
     </form>
   );
 }
 
 function DocumentList({ documents }: { documents: DocumentSummary[] }) {
   if (documents.length === 0) {
-    return <p className="text-sm text-neutral-500">No documents yet.</p>;
+    return <p className="text-sm text-muted-foreground">No documents yet.</p>;
   }
 
   return (
-    <ul className="space-y-1 text-sm">
+    <ul className="min-h-0 space-y-1 overflow-y-auto text-sm">
       {documents.map((document) => (
         <li key={document.id} className="flex justify-between gap-2">
           {/* The identity is the point of the line: this sidebar is where you
@@ -473,17 +479,25 @@ function DocumentList({ documents }: { documents: DocumentSummary[] }) {
               {document.label}
             </span>
             {identity(document) && (
-              <span className="block truncate text-xs text-neutral-500">
+              <span className="block truncate text-xs text-muted-foreground">
                 {identity(document)}
               </span>
             )}
           </span>
-          <span className="text-neutral-500">{document.chunks}</span>
+          <span
+            className="text-muted-foreground tabular-nums"
+            title={`${document.chunks} indexed chunks`}
+          >
+            {document.chunks}
+          </span>
         </li>
       ))}
     </ul>
   );
 }
+
+/** The one status that is a state rather than a message from the route. */
+const INDEXING = "indexing";
 
 function Uploader({ documents }: { documents: DocumentSummary[] }) {
   const router = useRouter();
@@ -505,7 +519,7 @@ function Uploader({ documents }: { documents: DocumentSummary[] }) {
     );
 
   async function upload(form: HTMLFormElement) {
-    setStatus("Indexing…");
+    setStatus(INDEXING);
     const response = await fetch("/api/documents", { method: "POST", body: new FormData(form) });
     const body = await response.json();
 
@@ -519,67 +533,82 @@ function Uploader({ documents }: { documents: DocumentSummary[] }) {
     }
   }
 
+  const indexing = status === INDEXING;
+
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        void upload(event.currentTarget);
-      }}
-      className="space-y-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
-    >
-      <input
-        name="label"
-        value={label}
-        onChange={(event) => setLabel(event.target.value)}
-        placeholder="Label, e.g. Job #8"
-        required
-        aria-invalid={clash}
-        className={`w-full rounded border px-2 py-1 text-sm dark:bg-neutral-950 ${
-          clash
-            ? "border-red-500 dark:border-red-500"
-            : "border-neutral-300 dark:border-neutral-700"
-        }`}
-      />
-      {clash && <p className="text-xs text-red-600">That label is already taken.</p>}
-      <select
-        name="kind"
-        value={kind}
-        onChange={(event) => setKind(event.target.value)}
-        className="w-full rounded border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
-      >
-        <option value="job">Job posting</option>
-        <option value="resume">Resume</option>
-      </select>
+    <Card className="gap-3 py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="text-sm">Add a document</CardTitle>
+      </CardHeader>
+
+      <CardContent className="px-4">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void upload(event.currentTarget);
+          }}
+          className="space-y-3"
+        >
+          {/* Two options that change the rest of the form, so both are worth
+              showing at once -- a select would hide half the decision behind a
+              click. Radix mirrors the choice into a hidden input, which is what
+              keeps `new FormData(form)` working. */}
+          <RadioGroup
+            name="kind"
+            value={kind}
+            onValueChange={setKind}
+            className="flex gap-4"
+          >
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="job" id="kind-job" />
+              <Label htmlFor="kind-job" className="text-sm font-normal">
+                Job posting
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="resume" id="kind-resume" />
+              <Label htmlFor="kind-resume" className="text-sm font-normal">
+                Resume
+              </Label>
+            </div>
+          </RadioGroup>
+
+          <div className="space-y-1">
+            <Input
+              name="label"
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              placeholder="Label, e.g. Job #8"
+              required
+              aria-invalid={clash}
+            />
+            {clash && <p className="text-xs text-destructive">That label is already taken.</p>}
+          </div>
 
       {/* Only postings. The resume is in scope for every question, so an
           identity on it would be data the "/" menu then has to hide. */}
-      {kind === "job" && (
-        <>
-          <input
-            name="company"
-            placeholder="Company (optional)"
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
-          />
-          <input
-            name="role_title"
-            placeholder="Role title (optional)"
-            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-950"
-          />
-          <p className="text-xs text-neutral-500">
-            Optional, but they are how the “/” menu and questions find this role.
-          </p>
-        </>
-      )}
+          {kind === "job" && (
+            <div className="space-y-2">
+              <Input name="company" placeholder="Company (optional)" />
+              <Input name="role_title" placeholder="Role title (optional)" />
+              <p className="text-xs text-muted-foreground">
+                Optional, but they are how the “/” menu and questions find this role.
+              </p>
+            </div>
+          )}
 
-      <input name="file" type="file" accept="application/pdf" required className="w-full text-xs" />
-      <button
-        type="submit"
-        disabled={clash}
-        className="w-full rounded bg-neutral-900 px-2 py-1 text-sm text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
-      >
-        Add PDF
-      </button>
-      {status && <p className="text-xs text-neutral-500">{status}</p>}
-    </form>
+          <Input name="file" type="file" accept="application/pdf" required className="text-xs" />
+
+          <Button type="submit" size="sm" className="w-full" disabled={clash || indexing}>
+            {indexing && <Spinner />}
+            {indexing ? "Indexing…" : "Add PDF"}
+          </Button>
+
+          {/* The spinner already says it is working, so the label would repeat
+              itself; everything else the route replies is worth reading. */}
+          {status && !indexing && <p className="text-xs text-muted-foreground">{status}</p>}
+        </form>
+      </CardContent>
+    </Card>
   );
 }

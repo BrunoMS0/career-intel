@@ -1852,6 +1852,38 @@ bar nobody can see. Wrapped buttons keep all three visible and save a dependency
 (`scroll-area`). Check what a registry component actually does before taking it;
 `registry.ai-sdk.dev/<name>.json` carries the source.
 
+**Done: the periphery, on tokens.** `card`, `input`, `label`, `radio-group` and
+`spinner` were added — five component files and **no new npm dependency**, since
+they all sit on the `radix-ui` package `init` already pulled. The uploader is a
+`Card` with a title it never had, the kind picker is a radio pair rather than a
+`select`, and every hardcoded `neutral-*`, `red-*` and `bg-white` in
+`app/workspace.tsx` is gone. That last part is what makes the dark mode decision
+above stop mattering: the sidebar, the composer and the "/" menu now read from
+`bg-popover`, `bg-accent`, `text-muted-foreground` and `border-input`, which flip
+with the tokens instead of with a `dark:` prefix each.
+
+The radio pair is the one swap worth justifying, since a `select` is native and
+free: there are exactly two options and choosing one *changes the form* — a
+posting shows company and role title, a resume does not — so hiding half the
+decision behind a click was the wrong trade. The thing to check when replacing a
+native control is that the form still submits, and it does: Radix mirrors the
+choice into a hidden input, so `new FormData(form)` still carries exactly one
+`kind`, and it follows the selection (`job` → `resume`, verified in the browser,
+with `getAll` to be sure both radios are not submitting at once).
+
+`Input` also had to survive the composer's `ref`, which the "/" picker uses to
+put the caret back after inserting a label. It does — React 19 forwards `ref` as
+an ordinary prop through a plain function component — and the whole flow was
+re-run in the browser: "/aff" offers Job #3, picking it writes "what about
+Job #3 ", caret at 18, focus back in the box, menu closed.
+
+**Skeleton was not added, because there is no loading state to fill.** The
+document list is server-rendered under `force-dynamic`, so the browser never
+holds an empty version of it; the only client-side gap is the `router.refresh()`
+after an upload, which lands in a few hundred milliseconds at the end of a
+minute-long ingest the button already spent spinning. A skeleton there would be
+decoration.
+
 A fenced block still renders, just unhighlighted. `AI Elements` also ships
 `shimmer` polymorphic over an `as` prop nothing passes, caching
 `motion.create(element)` in a module-level Map that
