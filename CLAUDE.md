@@ -1914,6 +1914,46 @@ renders with Geist, the dark tokens, all 8 documents, the derived openers and th
 radio pair — so the fonts, the CSS and the client bundle all made it into the
 traced output.
 
+**The layout had no ceiling, and a long answer found it.** Four complaints
+arrived together and three of them were one bug: `body` was `min-h-full`, a
+minimum with nothing above it, so a tall message grew `main` past the viewport
+and **the page** scrolled instead of the transcript — taking the sidebar and the
+composer out of view. Measured at the moment it broke: viewport 853, `main` 891.
+`h-full overflow-hidden` on `body` caps the column, and everything below it
+(`min-h-0` on `main`, on `section`, on `aside`) was already in place waiting for
+a ceiling to push against. The page now scrolls in neither axis at any width;
+the transcript and the document list scroll inside themselves.
+
+The rest of that group:
+
+- **Full width.** `mx-auto max-w-6xl` centred the app and left the right third
+  empty. The sidebar is 16rem flush left and the chat takes the remainder — 1264
+  of 1600.
+- **The thinking was being rendered as source code.** The model indents its
+  outline, markdown reads four leading spaces as a code block, and Streamdown
+  then wrapped the thought log in a bordered block with line numbers, a download
+  button and a 2,039px horizontal scrollbar. Overriding `pre` and `code` in
+  `ReasoningContent` keeps it wrapping as prose, which is what it is.
+- **Scrollbars** are `scrollbar-width: thin` plus the WebKit pseudo-elements, on
+  tokens instead of the browser's default slab.
+
+**Two more, and both were only findable by driving the thing.**
+
+`Reasoning` could not be collapsed while it streamed. The auto-open effect is
+written as a rule rather than an event -- `if (isStreaming && !isOpen) open()` --
+so it fired again on the render right after a click, for the forty seconds the
+button matters most. A ref makes it a one-off, seeded from the default so a panel
+that mounted already open does not spend its auto-open a second time.
+
+And the fix for "the panel buries the answer" was **not** the sticky trigger it
+looks like: `MessageContent` is `overflow-hidden`, which makes an ancestor
+scrollport that does not scroll, so `position: sticky` is inert inside it —
+measured, the trigger fell to -484 on scroll. What works is bounding the panel:
+`max-h-[45vh] overflow-y-auto` once streaming has stopped, so a 4,696px thought
+log becomes a 405px box with the trigger beside it. Not while streaming, where
+the point is watching the newest line and the transcript is already pinned to
+the bottom.
+
 A fenced block still renders, just unhighlighted. `AI Elements` also ships
 `shimmer` polymorphic over an `as` prop nothing passes, caching
 `motion.create(element)` in a module-level Map that

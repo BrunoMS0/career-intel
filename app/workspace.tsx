@@ -210,12 +210,13 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
   }
 
   return (
-    // `flex-1`, not `h-full`: body is `min-h-full`, so its height is auto and a
-    // percentage height here resolves to the content instead of the viewport --
-    // which left the composer floating mid-page and its menu off the top edge.
-    // `min-h-0` is what lets the transcript below scroll instead of growing.
-    <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 gap-8 p-6">
-      <aside className="hidden w-64 shrink-0 flex-col gap-4 md:flex">
+    // Full width rather than a centred column: the sidebar is a fixed 16rem on
+    // the left and everything else belongs to the chat. `min-h-0` is what lets
+    // the transcript scroll instead of pushing the composer off the page.
+    <main className="flex min-h-0 w-full flex-1 gap-8 p-6">
+      {/* `min-h-0` so a corpus taller than the viewport scrolls the list rather
+          than the page, now that the page cannot scroll at all. */}
+      <aside className="hidden min-h-0 w-64 shrink-0 flex-col gap-4 md:flex">
         <Uploader documents={documents} />
         <DocumentList documents={documents} />
       </aside>

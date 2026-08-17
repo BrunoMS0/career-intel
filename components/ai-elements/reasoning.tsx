@@ -79,6 +79,14 @@ export const Reasoning = memo(
     const hasEverStreamedRef = useRef(isStreaming);
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const startTimeRef = useRef<number | null>(null);
+    // Auto-open is a one-off, not a rule held for as long as the stream runs.
+    // As a rule it reopened the panel on the very next render after a click, so
+    // the trigger looked dead for the forty seconds it matters most.
+    //
+    // Seeded from the default rather than `false`: a panel mounted mid-stream is
+    // already open, so its one auto-open is spent. Starting at false let the
+    // effect eat the first click and only obey the second.
+    const hasAutoOpenedRef = useRef(resolvedDefaultOpen);
 
     // Track when streaming starts and compute duration
     useEffect(() => {
@@ -95,7 +103,8 @@ export const Reasoning = memo(
 
     // Auto-open when streaming starts (unless explicitly closed)
     useEffect(() => {
-      if (isStreaming && !isOpen && !isExplicitlyClosed) {
+      if (isStreaming && !isOpen && !isExplicitlyClosed && !hasAutoOpenedRef.current) {
+        hasAutoOpenedRef.current = true;
         setIsOpen(true);
       }
     }, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed]);
@@ -201,19 +210,47 @@ export type ReasoningContentProps = ComponentProps<
 };
 
 // Same trim as MessageResponse: no shiki, katex or mermaid for a thought log.
+//
+// And no code block either. The model indents its outline, markdown reads four
+// leading spaces as code, and Streamdown then renders the thinking inside a
+// bordered block with line numbers, a download button and a horizontal scrollbar
+// two thousand pixels wide. None of it is code. These two overrides keep the
+// text wrapping in place, which is the whole reason the panel used to widen the
+// page.
+const REASONING_COMPONENTS = {
+  pre: ({ children }: { children?: ReactNode }) => (
+    <pre className="my-2 whitespace-pre-wrap break-words font-sans">{children}</pre>
+  ),
+  code: ({ children }: { children?: ReactNode }) => <>{children}</>,
+};
+
 export const ReasoningContent = memo(
-  ({ className, children, ...props }: ReasoningContentProps) => (
-    <CollapsibleContent
-      className={cn(
-        "mt-4 text-sm",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-        className
-      )}
-      {...props}
-    >
-      <Streamdown>{children}</Streamdown>
-    </CollapsibleContent>
-  )
+  ({ className, children, ...props }: ReasoningContentProps) => {
+    const { isStreaming } = useReasoning();
+
+    return (
+      <CollapsibleContent
+        className={cn(
+          "mt-4 text-sm",
+          "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+          // A finished thought log runs to hundreds of lines and used to bury
+          // the answer under itself, with the only way to close it being a
+          // scroll back up to where it started. Bounded, it scrolls inside its
+          // own box and the trigger stays a few pixels away.
+          //
+          // Not while it streams: there the point is watching the newest line
+          // arrive, and the transcript is already pinned to the bottom for that.
+          // It auto-closes a second after streaming ends anyway, so the cap only
+          // ever applies to a panel someone deliberately reopened.
+          !isStreaming && "max-h-[45vh] overflow-y-auto",
+          className
+        )}
+        {...props}
+      >
+        <Streamdown components={REASONING_COMPONENTS}>{children}</Streamdown>
+      </CollapsibleContent>
+    );
+  }
 );
 
 Reasoning.displayName = "Reasoning";
