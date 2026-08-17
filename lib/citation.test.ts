@@ -69,6 +69,32 @@ test("several citations in one bracket are all rewritten", () => {
   );
 });
 
+test("a citation the model wrapped in inline code becomes a chip, not code", () => {
+  // Observed in a real answer: gemma sometimes writes the citation as inline
+  // code. Markdown parses nothing inside a code span, so rewriting in place left
+  // the raw link syntax visible inside a code chip -- worse than the brackets it
+  // replaced. The backticks are the model reaching for a chip; eating them gives
+  // it one, and the title keeps the plain bracket.
+  assert.equal(
+    linkCitations("at scale `[Job #1 — WHAT YOU'LL BRING]`", DOCUMENTS),
+    'at scale [Job #1 (Gamma) — WHAT YOU\'LL BRING](#cite "[Job #1 — WHAT YOU\'LL BRING]")',
+  );
+});
+
+test("a code span that is not a citation is left as code", () => {
+  const code = "`[unrelated]`";
+  assert.equal(linkCitations(code, DOCUMENTS), code);
+});
+
+test("a lone backtick does not pair with a bracket across the sentence", () => {
+  // The pair has to be symmetric, or a stray tick earlier in the line would
+  // swallow the citation's opening bracket.
+  assert.equal(
+    linkCitations("`x [Job #4 — EXPERIENCE]", DOCUMENTS),
+    '`x [Job #4 (Kargo) — EXPERIENCE](#cite "[Job #4 — EXPERIENCE]")',
+  );
+});
+
 test("a bracket naming no indexed document stays plain text", () => {
   // An invented citation has to keep looking invented. Phase 8b measured the
   // model naming `Job #6 — Requirements`, a section that does not exist; a chip

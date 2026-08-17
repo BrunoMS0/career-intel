@@ -2,12 +2,13 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isReasoningUIPart, isTextUIPart, type UIMessage } from "ai";
-import { CheckIcon, CopyIcon, RefreshCwIcon, SearchXIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, FileSearchIcon, RefreshCwIcon, SearchXIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import {
   Conversation,
   ConversationContent,
+  ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import {
@@ -22,6 +23,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
+import { Button } from "@/components/ui/button";
 import { linkCitations } from "@/lib/citation";
 import { isRefusal } from "@/lib/guardrail";
 import { applyMention, mentionQuery, suggest } from "@/lib/mention";
@@ -40,11 +42,27 @@ export type DocumentSummary = {
 const identity = (document: DocumentSummary) =>
   [document.company, document.role_title].filter(Boolean).join(" — ");
 
-const SUGGESTIONS = [
-  "What skills am I missing for Job #1?",
-  "How does my experience align with Job #4?",
-  "Which of these roles fits me best, and why?",
-];
+/**
+ * Openers, built from the postings that are actually indexed.
+ *
+ * They used to name Job #1 and Job #4 as constants, which is fine until someone
+ * uploads a different corpus and the app greets them with two questions its own
+ * guardrail refuses. Labels rather than company names on purpose: both resolve
+ * scope since phase 7, and the labelled forms are the ones measured clean three
+ * runs out of three -- `twin-align-golden`, the same question naming the company
+ * instead, still flips. The "/" picker is where the real names belong.
+ */
+function suggestionsFor(documents: DocumentSummary[]) {
+  const jobs = documents.filter((document) => document.kind === "job");
+  if (jobs.length === 0) return [];
+
+  const [first, second = first] = jobs;
+  return [
+    `What skills am I missing for ${first.label}?`,
+    `How does my experience align with ${second.label}?`,
+    "Which of these roles fits me best, and why?",
+  ];
+}
 
 /** Everything the model said, with the reasoning left out. */
 const answerText = (message: UIMessage) =>
@@ -99,6 +117,62 @@ function CopyAnswer({ text }: { text: string }) {
 }
 
 /**
+ * What an empty transcript says, which depends on whether there is a corpus.
+ *
+ * With nothing indexed the openers are hidden rather than greyed out: every one
+ * of them names a posting, so on an empty database they would each be refused by
+ * the guardrail, and an app whose own suggestions get refused reads as broken.
+ *
+ * The pills are shadcn `Button`s rather than AI Elements' `Suggestion`, which is
+ * the same button inside a horizontally scrolling `ScrollArea` with a hidden
+ * scrollbar. Three questions of this length come to about a thousand pixels, so
+ * two of the three would sit off-screen behind a bar nobody can see. Wrapping
+ * keeps all of them visible and saves a dependency.
+ */
+function Opening({
+  documents,
+  onAsk,
+}: {
+  documents: DocumentSummary[];
+  onAsk: (question: string) => void;
+}) {
+  const suggestions = suggestionsFor(documents);
+  const postings = documents.filter((document) => document.kind === "job").length;
+
+  return (
+    // `flex-1` because `size-full` resolves to the content's own height in a
+    // flex column, which left the whole thing pinned to the top of an empty page.
+    <ConversationEmptyState className="flex-1 gap-4">
+      <FileSearchIcon className="size-6 text-muted-foreground" />
+      <div className="space-y-1">
+        <h2 className="font-medium">Ask about your fit for these roles</h2>
+        <p className="text-sm text-muted-foreground">
+          {postings === 0
+            ? "Nothing is indexed yet. Add your resume and a job posting to start."
+            : `Answered only from your resume and ${postings} job posting${
+                postings === 1 ? "" : "s"
+              }. Type “/” to name one.`}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap justify-center gap-2">
+        {suggestions.map((suggestion) => (
+          <Button
+            key={suggestion}
+            variant="outline"
+            size="sm"
+            className="rounded-full"
+            onClick={() => onAsk(suggestion)}
+          >
+            {suggestion}
+          </Button>
+        ))}
+      </div>
+    </ConversationEmptyState>
+  );
+}
+
+/**
  * The guardrail's refusal, which is not an answer and should not look like one.
  *
  * It is a different event from the rest of the transcript: no model ran, the
@@ -143,23 +217,10 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Conversation>
-          <ConversationContent className="px-0">
-            {messages.length === 0 && (
-              <div className="space-y-2 pt-8">
-                <p className="pb-2 text-sm text-muted-foreground">
-                  Ask about your fit for these roles.
-                </p>
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onClick={() => ask(suggestion)}
-                    className="block w-full rounded-lg border px-3 py-2 text-left text-sm hover:bg-accent"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            )}
+          {/* `min-h-full` so the empty state has a full column to centre itself
+              in, without capping the height once there are messages. */}
+          <ConversationContent className="min-h-full px-0">
+            {messages.length === 0 && <Opening documents={documents} onAsk={ask} />}
 
             {messages.map((message, index) => {
               const answer = answerText(message);
@@ -380,7 +441,9 @@ function Composer({
         aria-expanded={open}
         aria-controls="mention-menu"
         aria-autocomplete="list"
-        placeholder="What skills am I missing for Job #1?  (type / to pick a role)"
+        // No hardcoded label here either: the openers above are built from the
+        // corpus, and this used to name a posting that need not exist.
+        placeholder="Ask about your fit for a role — type / to pick one"
         className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-950"
       />
       <button

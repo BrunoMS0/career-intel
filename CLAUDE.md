@@ -1818,6 +1818,40 @@ Confirmed in `query_logs` -- the retry logged "How much does Job #2 pay?" at
 0.3296, the same question and the same distance, and replaced the answer in place
 instead of appending a turn.
 
+**Rendering markdown exposed something the raw transcript had been hiding: the
+model sometimes writes a citation as inline code.** ``  `[Job #1 — WHAT YOU'LL
+BRING]` `` rather than the bare bracket the prompt asks for, on some answers and
+not others. It cost nothing while everything was plain text, and it broke the
+chips outright — markdown parses nothing inside a code span, so the rewrite
+produced a code chip containing the raw link syntax, `[Job #1 (Gamma) — WHAT
+YOU'LL BRING](#cite "…")`, which is worse than the brackets it replaced.
+
+`linkCitations` eats a symmetric backtick pair around a citation, because the
+backticks are the model reaching for exactly what a chip is. A code span that is
+not a citation stays code, and a lone backtick does not pair across the sentence.
+Found by asking a question the earlier checks had not used, not by reading the
+rule.
+
+**Done: the openers are built from the corpus.** They were two constants naming
+Job #1 and Job #4, which is fine until someone uploads a different corpus and the
+app greets them with two questions its own guardrail refuses. `suggestionsFor()`
+reads the indexed postings; with none indexed it returns nothing and the empty
+state says so instead of offering openers that cannot work. The composer
+placeholder lost its hardcoded label for the same reason.
+
+Labels rather than company names in those openers, deliberately: both resolve
+scope since phase 7, and the labelled forms are the ones measured clean 3 runs
+out of 3 while `twin-align-golden`, the same question naming the company, still
+flips. The "/" picker is where the real names belong.
+
+**AI Elements' `Suggestion` was not installed**, and the reason generalises. It
+is the same shadcn `Button` inside a horizontally scrolling `ScrollArea` whose
+scrollbar is `hidden`. Three questions of this length come to roughly a thousand
+pixels against a ~600px column, so two of the three would sit off-screen behind a
+bar nobody can see. Wrapped buttons keep all three visible and save a dependency
+(`scroll-area`). Check what a registry component actually does before taking it;
+`registry.ai-sdk.dev/<name>.json` carries the source.
+
 A fenced block still renders, just unhighlighted. `AI Elements` also ships
 `shimmer` polymorphic over an `as` prop nothing passes, caching
 `motion.create(element)` in a module-level Map that

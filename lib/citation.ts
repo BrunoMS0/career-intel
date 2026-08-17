@@ -74,16 +74,25 @@ export function linkCitations(text: string, documents: readonly Citable[]): stri
 
   const named = new Map(documents.map((document) => [document.label, citedName(document)]));
 
+  // The optional backtick pair is not decoration. The model sometimes writes a
+  // citation as `[Job #1 — WHAT YOU'LL BRING]`, inline code, and markdown does
+  // not parse anything inside a code span -- so rewriting in place produced a
+  // code chip containing the raw link syntax, which is worse than what it
+  // replaced. Eating the backticks turns that case into the chip the model was
+  // reaching for. The backreference makes the pair symmetric or absent.
+  //
   // No newlines inside a citation: an unclosed `[` would otherwise swallow the
   // rest of the answer while it streams.
-  return text.replace(/\[([^\][\n]+)\]/g, (bracket, inside: string) => {
+  return text.replace(/(`?)\[([^\][\n]+)\]\1/g, (bracket, _tick: string, inside: string) => {
     labels.lastIndex = 0;
     if (!labels.test(inside)) return bracket;
 
     const display = inside.replace(labels, (label) => named.get(label) ?? label);
-    // The bracket the model wrote, kept as the link title so the chip stays
-    // traceable to the label the sidebar and the eval both speak.
-    const title = bracket.replace(/"/g, "'");
+    // The citation the model wrote, kept as the link title so the chip stays
+    // traceable to the label the sidebar and the eval both speak. Rebuilt from
+    // the contents rather than from the match, so a backtick the model added
+    // does not end up in the tooltip.
+    const title = `[${inside}]`.replace(/"/g, "'");
     return `[${display}](#cite "${title}")`;
   });
 }
