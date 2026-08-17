@@ -47,6 +47,9 @@ https://github.com/BrunoMS0/career-intel
   Re-run it after re-ingesting; nothing detects that it was not
 - `lib/mention.ts` — the "/" picker's rule: which token is a mention, which
   postings it offers, what text replaces it. Pure, so `pnpm test` covers it
+- `lib/citation.ts` — how a `[Job #4 — EXPERIENCE]` bracket is displayed: which
+  ones resolve to an indexed document and what a chip is allowed to claim. Pure,
+  display only, and it never touches the string the prompt asked the model for
 - `lib/guardrail.ts` — the 0.40 threshold and the refusal text, kept free of db
   imports so the deterministic suite can test it with injected distances
 - `lib/ingest.ts` — parse, chunk, embed, store in one transaction
@@ -1771,6 +1774,27 @@ words and with citations. Those are answers and keep looking like answers —
 prompt after 15 sections of excerpts reached the model, which is a different
 event from the question never being searched.
 
+**Done: citations are chips, and the label survives inside them.** `lib/citation.ts`
+rewrites `[Job #4 — EXPERIENCE]` into a markdown link whose text names the
+posting and whose title is the bracket the model actually wrote; `components.a`
+on `MessageResponse` renders it as a chip. Nothing reaches the server, nothing
+reaches the prompt, and the citation contract is untouched — this is display
+only, so `eval/answers.json` is not invalidated.
+
+Two rules in it that are not obvious and are tested:
+
+- **A bracket naming no indexed document stays plain text.** A chip is a claim
+  that the source resolved, and phase 8b already measured the model inventing
+  `Job #6 — Requirements`. Dressing an invented citation as a resolved one hides
+  the one failure this repo has proven the model commits.
+- **The chip keeps the label rather than replacing it**, which is the opposite of
+  what was built first. Asked what Job #2 pays, the model answers "Job #2 pays
+  $120,000 – $155,000" *in prose* and cites the posting — so a chip reading
+  "eJam — …" contradicts the sentence carrying it, and on a touch screen the
+  title attribute that would reconcile them never appears. `Job #4 (Kargo) —
+  EXPERIENCE` costs six characters and needs no hover. Found by asking a
+  question the three cached ones did not cover.
+
 A fenced block still renders, just unhighlighted. `AI Elements` also ships
 `shimmer` polymorphic over an `as` prop nothing passes, caching
 `motion.create(element)` in a module-level Map that
@@ -1801,11 +1825,9 @@ Known and deliberate, not yet fixed:
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text. The guardrail inherits this:
   a follow-up is assessed on the wrong question's distances.
-- Citations are still raw `[Job #2 — REQUIREMENTS]` brackets in the transcript.
-  Turning them into chips is a client-side parse of the answer text plus the
-  identity already on the client; the excerpt behind a chip is not reachable
-  without putting the retrieved sections on the stream, which is a change to the
-  answer path and wants measuring first.
+- A citation chip carries no excerpt, because the retrieved sections are not on
+  the stream. Putting them there is a change to the answer path and wants
+  measuring first; until then a chip says which section, never what it said.
 - `query_logs` grows without bound and nothing reads it yet.
 - `query_logs.answered` is written before the model call, so it records "the
   guardrail let this through", not "the user got an answer". Three identical

@@ -16,6 +16,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
+import { linkCitations } from "@/lib/citation";
 import { isRefusal } from "@/lib/guardrail";
 import { applyMention, mentionQuery, suggest } from "@/lib/mention";
 
@@ -45,6 +46,27 @@ const answerText = (message: UIMessage) =>
     .filter(isTextUIPart)
     .map((part) => part.text)
     .join("");
+
+/**
+ * A resolved citation, rendered where the markdown says a link is.
+ *
+ * `linkCitations` only produces one for a bracket naming an indexed document, so
+ * the chip is a claim that the source resolved -- an invented citation stays
+ * plain text and keeps looking like what it is. It is a `span`, not a link:
+ * there is nowhere to go, since the retrieved excerpt is not on the stream. The
+ * title carries the label the model actually wrote, which is what the sidebar,
+ * `query_logs` and every eval expectation speak.
+ */
+const CITATION_COMPONENTS = {
+  a: ({ children, title }: { children?: React.ReactNode; title?: string }) => (
+    <span
+      title={title}
+      className="mx-0.5 inline-flex items-baseline rounded border bg-muted px-1.5 text-xs font-medium text-muted-foreground"
+    >
+      {children}
+    </span>
+  ),
+};
 
 /**
  * The guardrail's refusal, which is not an answer and should not look like one.
@@ -133,7 +155,13 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
                           );
                         }
                         if (isTextUIPart(part)) {
-                          return <MessageResponse key={i}>{part.text}</MessageResponse>;
+                          return (
+                            <MessageResponse key={i} components={CITATION_COMPONENTS}>
+                              {message.role === "assistant"
+                                ? linkCitations(part.text, documents)
+                                : part.text}
+                            </MessageResponse>
+                          );
                         }
                         return null;
                       })
