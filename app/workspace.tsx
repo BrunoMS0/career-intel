@@ -4,7 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isReasoningUIPart, isTextUIPart, type UIMessage } from "ai";
 import { CheckIcon, CopyIcon, FileSearchIcon, RefreshCwIcon, SearchXIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -32,6 +32,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { linkCitations } from "@/lib/citation";
 import { isRefusal } from "@/lib/guardrail";
 import { applyMention, mentionQuery, suggest } from "@/lib/mention";
+import { segmentByIdentity } from "@/lib/scope";
 
 export type DocumentSummary = {
   id: string;
@@ -213,12 +214,28 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
     // Full width rather than a centred column: the sidebar is a fixed 16rem on
     // the left and everything else belongs to the chat. `min-h-0` is what lets
     // the transcript scroll instead of pushing the composer off the page.
-    <main className="flex min-h-0 w-full flex-1 gap-8 p-6">
-      {/* `min-h-0` so a corpus taller than the viewport scrolls the list rather
-          than the page, now that the page cannot scroll at all. */}
-      <aside className="hidden min-h-0 w-64 shrink-0 flex-col gap-4 md:flex">
-        <Uploader documents={documents} />
+    <main className="flex min-h-0 w-full flex-1 gap-6 p-4">
+      {/* A panel rather than a column of loose cards, so the corpus reads as a
+          different surface from the conversation beside it. `--sidebar` sits one
+          step off `--background` in both themes and that step is the whole
+          separation -- no shadow, no second border, nothing new to maintain. */}
+      {/* `overflow-y-auto` is the floor, not the plan: the list above scrolls on
+          its own, and this only catches a viewport too short for the form, whose
+          submit button would otherwise be unreachable. */}
+      <aside className="hidden min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto rounded-xl border border-sidebar-border bg-sidebar p-4 text-sidebar-foreground md:flex">
+        <div>
+          <h1 className="font-semibold">Career Intelligence</h1>
+          <p className="text-xs text-muted-foreground">
+            Answered only from the documents below
+          </p>
+        </div>
+
+        {/* The corpus is what the panel is about and adding to it is the action,
+            so the list takes the height and the form sits under it. `min-h-0` so
+            a corpus taller than the panel scrolls the list rather than the page,
+            which cannot scroll at all. */}
         <DocumentList documents={documents} />
+        <Uploader documents={documents} />
       </aside>
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -340,10 +357,19 @@ function Composer({
   onAsk: (question: string) => void;
 }) {
   const box = useRef<HTMLInputElement>(null);
+  const mirror = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [active, setActive] = useState(0);
+
+  // A question longer than the box scrolls the input, and the mirror has to
+  // follow or the marks part company with the words they belong to. Called from
+  // the input's own scroll event and after every render that changes the text.
+  const syncMirror = () => {
+    if (mirror.current && box.current) mirror.current.scrollLeft = box.current.scrollLeft;
+  };
+  useEffect(syncMirror, [text, caret]);
 
   const mention = dismissed ? null : mentionQuery(text, caret);
   const matches = mention ? suggest(documents, mention.query) : [];
@@ -426,37 +452,94 @@ function Composer({
         </ul>
       )}
 
-      <Input
-        ref={box}
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          setCaret(event.target.selectionStart ?? event.target.value.length);
-          setDismissed(false);
-          setActive(0);
-        }}
-        // Fires when the caret moves without the text changing -- clicking back
-        // into a mention that was already typed past has to reopen the menu.
-        //
-        // Guarded on the value, because a selection event can arrive after the
-        // text it described is gone: select the whole box and type over it, and
-        // the late event reports the old selection's caret and closes a menu
-        // the typing had just opened. Observed with a triple-click.
-        onSelect={(event) => {
-          if (event.currentTarget.value === text) {
-            setCaret(event.currentTarget.selectionStart ?? 0);
-          }
-        }}
-        onKeyDown={onKeyDown}
-        role="combobox"
-        aria-expanded={open}
-        aria-controls="mention-menu"
-        aria-autocomplete="list"
-        // No hardcoded label here either: the openers above are built from the
-        // corpus, and this used to name a posting that need not exist.
-        placeholder="Ask about your fit for a role — type / to pick one"
-        className="h-10 flex-1"
-      />
+      <div className="relative flex-1">
+        <Input
+          ref={box}
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            setCaret(event.target.selectionStart ?? event.target.value.length);
+            setDismissed(false);
+            setActive(0);
+          }}
+          onScroll={syncMirror}
+          // Fires when the caret moves without the text changing -- clicking back
+          // into a mention that was already typed past has to reopen the menu.
+          //
+          // Guarded on the value, because a selection event can arrive after the
+          // text it described is gone: select the whole box and type over it, and
+          // the late event reports the old selection's caret and closes a menu
+          // the typing had just opened. Observed with a triple-click.
+          onSelect={(event) => {
+            if (event.currentTarget.value === text) {
+              setCaret(event.currentTarget.selectionStart ?? 0);
+            }
+          }}
+          onKeyDown={onKeyDown}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="mention-menu"
+          aria-autocomplete="list"
+          // No hardcoded label here either: the openers above are built from the
+          // corpus, and this used to name a posting that need not exist.
+          placeholder="Ask about your fit for a role — type / to pick one"
+          // Transparent text, not hidden text: the input still owns the caret, the
+          // selection and every keystroke -- only the glyphs come from the mirror
+          // underneath, which is the only way to colour part of an input's value.
+          //
+          // Inline rather than `text-transparent`, and not for style: the utility
+          // matches this element and still loses here, while the identical class
+          // list on a div next to it wins. Whatever the cascade is doing, the
+          // failure mode is the answer rendered twice, slightly offset, so this
+          // one declaration is not worth leaving to it.
+          style={text ? { color: "transparent", caretColor: "var(--foreground)" } : undefined}
+          className="h-10 w-full"
+        />
+
+        {/*
+          The same string, drawn again with the parts that name a document marked.
+          `aria-hidden` because the input is still the accessible field, and
+          `pointer-events-none` so every click lands on it.
+
+          Box metrics are duplicated exactly on purpose -- same padding, same
+          border width, same font size and breakpoint. Colour and background are
+          free to differ; the typeface is not. A different family or weight would
+          change the glyph widths, and the caret is positioned by the input using
+          its own font, so the two would drift apart by a character or more.
+        */}
+        <div
+          ref={mirror}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 flex items-center overflow-hidden rounded-lg border border-transparent px-2.5 text-base whitespace-pre md:text-sm"
+        >
+          <span>
+            {segmentByIdentity(text, documents).map((segment, index) =>
+              segment.label ? (
+                // A chip, not an underline. Every dimension here is bounded by
+                // one fact: the caret is drawn by the input over its own layout,
+                // so nothing may move a glyph. Horizontal padding is cancelled
+                // by an equal negative margin, and the space character next to
+                // the mention -- 4.3px at this size -- is the whole budget for
+                // it. At px-1 the chip eats all of it and touches the next word,
+                // so the padding is 2px and the room comes from the vertical
+                // instead: on an inline box, `py` paints outside the line box
+                // without resizing it, so it is free. The ring is a box-shadow
+                // and costs no layout either. Weight and family stay put for the
+                // same reason -- they change glyph widths.
+                <span
+                  key={index}
+                  className="-mx-0.5 rounded-md bg-mention/15 px-0.5 py-1 text-mention ring-1 ring-mention/40"
+                >
+                  {segment.text}
+                </span>
+              ) : (
+                <span key={index}>{segment.text}</span>
+              ),
+            )}
+          </span>
+        </div>
+      </div>
+
       <Button type="submit" className="h-10" disabled={busy || !text.trim()}>
         {busy ? <Spinner /> : "Ask"}
       </Button>
@@ -465,35 +548,61 @@ function Composer({
 }
 
 function DocumentList({ documents }: { documents: DocumentSummary[] }) {
-  if (documents.length === 0) {
-    return <p className="text-sm text-muted-foreground">No documents yet.</p>;
-  }
-
   return (
-    <ul className="min-h-0 space-y-1 overflow-y-auto text-sm">
-      {documents.map((document) => (
-        <li key={document.id} className="flex justify-between gap-2">
-          {/* The identity is the point of the line: this sidebar is where you
-              learn that Job #3 is Afficiency before typing "/" in the box. */}
-          <span className="min-w-0">
-            <span className={document.kind === "resume" ? "font-medium" : undefined}>
-              {document.label}
-            </span>
-            {identity(document) && (
-              <span className="block truncate text-xs text-muted-foreground">
-                {identity(document)}
+    // `min-h-40` and not `min-h-0`: the form under it does not shrink, so on a
+    // short viewport a list that may shrink to anything shrinks to nothing, and
+    // the corpus -- the thing the panel exists to show -- disappears while the
+    // upload form stays whole. Measured at 450px tall, where it hit exactly 0.
+    <div className="flex min-h-40 flex-1 flex-col gap-2">
+      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        Indexed documents
+      </p>
+
+      {documents.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nothing indexed yet.</p>
+      ) : (
+        // `pr-2` because the scrollbar is painted at this element's edge, so
+        // without it the bar sits against the boxes' own border. The padding is
+        // unconditional: a list that only indents itself once it overflows moves
+        // every box sideways the moment a ninth document is added.
+        <ul className="min-h-0 space-y-2.5 overflow-y-auto pr-2 text-sm">
+          {documents.map((document) => (
+            // A box each: neutral surface, lavender edge. The edge is brighter
+            // than the panel's own -- `--mention` at half strength against the
+            // panel border's quarter -- because these are the things on the
+            // panel and it is the panel that should recede. Same hue as a
+            // resolved mention in the box below, which is the same claim: this
+            // names an indexed document.
+            //
+            // No hover and no pointer: a document is not selectable here, and
+            // chrome that looks clickable is a promise the list does not keep.
+            <li
+              key={document.id}
+              className="flex items-start justify-between gap-2 rounded-lg border border-mention/50 bg-background/60 px-3 py-2"
+            >
+              {/* The identity is the point of the line: this sidebar is where you
+                  learn that Job #3 is Afficiency before typing "/" in the box. */}
+              <span className="min-w-0">
+                <span className={document.kind === "resume" ? "font-medium" : undefined}>
+                  {document.label}
+                </span>
+                {identity(document) && (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {identity(document)}
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-          <span
-            className="text-muted-foreground tabular-nums"
-            title={`${document.chunks} indexed chunks`}
-          >
-            {document.chunks}
-          </span>
-        </li>
-      ))}
-    </ul>
+              <span
+                className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground tabular-nums"
+                title={`${document.chunks} indexed chunks`}
+              >
+                {document.chunks}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -537,7 +646,9 @@ function Uploader({ documents }: { documents: DocumentSummary[] }) {
   const indexing = status === INDEXING;
 
   return (
-    <Card className="gap-3 py-4">
+    // The panel's own quiet edge, not the documents' brighter one: this is the
+    // form, not one of the things the list is about.
+    <Card className="shrink-0 gap-3 border-sidebar-border bg-background/60 py-4">
       <CardHeader className="px-4">
         <CardTitle className="text-sm">Add a document</CardTitle>
       </CardHeader>

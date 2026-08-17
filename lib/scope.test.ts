@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { identityParts, scopeFor } from "./scope.ts";
+import { identityParts, scopeFor, segmentByIdentity } from "./scope.ts";
 
 // The corpus, as far as this rule is concerned. Kept here rather than read from
 // the database so the suite stays offline: what is under test is the matching,
@@ -97,4 +97,74 @@ test("a document with no identity at all still answers to its label", () => {
   const bare = [{ label: "Job #8", company: null, role_title: null }];
   assert.deepEqual(scopeFor("what does Job #8 pay?", bare), ["Job #8"]);
   assert.deepEqual(scopeFor("what does the data scientist role pay?", bare), []);
+});
+
+// segmentByIdentity exists so the composer can show which words the search will
+// act on. Its whole value is agreeing with scopeFor, so most of these assert the
+// two together rather than the segments alone.
+
+const highlighted = (text: string) =>
+  segmentByIdentity(text, CORPUS)
+    .filter((segment) => segment.label)
+    .map((segment) => `${segment.text}=${segment.label}`);
+
+test("a label is marked whole, punctuation and spacing included", () => {
+  assert.deepEqual(segmentByIdentity("what about Job #3 here", CORPUS), [
+    { text: "what about ", label: null },
+    { text: "Job #3", label: "Job #3" },
+    { text: " here", label: null },
+  ]);
+});
+
+test("what gets marked is exactly what the retriever would scope to", () => {
+  for (const question of [
+    "what skills am I missing for Job #3?",
+    "¿qué habilidades me faltan para job 3?",
+    "how much does the Afficiency role pay?",
+    "which of these jobs are remote?",
+    "give me a recipe for pasta carbonara",
+  ]) {
+    const marked = [
+      ...new Set(segmentByIdentity(question, CORPUS).map((s) => s.label).filter(Boolean)),
+    ];
+    assert.deepEqual(marked.sort(), scopeFor(question, CORPUS).sort(), question);
+  }
+});
+
+test("a question naming nothing is one plain run", () => {
+  assert.deepEqual(segmentByIdentity("which of these roles fits me best?", CORPUS), [
+    { text: "which of these roles fits me best?", label: null },
+  ]);
+});
+
+test("the company is marked where the user actually typed it", () => {
+  assert.deepEqual(highlighted("how much does the Afficiency role pay?"), ["Afficiency=Job #3"]);
+});
+
+test("two postings named in one question are marked separately", () => {
+  assert.deepEqual(highlighted("compare Job #1 and Job #4"), ["Job #1=Job #1", "Job #4=Job #4"]);
+});
+
+test("overlapping parts of one document do not double-mark", () => {
+  // "AI Engineer" is a part of Job #5 and sits inside Job #4's "Agentic AI
+  // Engineer", so the runs collide. Whichever match starts first owns the text,
+  // and the run is never emitted twice.
+  const segments = segmentByIdentity("the Agentic AI Engineer role", CORPUS);
+  assert.equal(segments.map((s) => s.text).join(""), "the Agentic AI Engineer role");
+});
+
+test("every segment concatenates back to the question", () => {
+  for (const question of [
+    "what about Job #3 here",
+    "how much does the Afficiency role pay?",
+    "  spaced   out  Job #1  ",
+    "",
+  ]) {
+    assert.equal(
+      segmentByIdentity(question, CORPUS)
+        .map((segment) => segment.text)
+        .join(""),
+      question,
+    );
+  }
 });

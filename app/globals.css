@@ -38,6 +38,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-mention: var(--mention);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -75,6 +76,12 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+  /* The one hue in an otherwise greyscale theme, and the reason it earns a
+     token of its own: a mention has to read as "this resolved to a document",
+     which no shade of grey says here -- every grey in the box is already
+     spoken for by ordinary text, placeholder or border. `--destructive` is the
+     only other colour and it means something went wrong. */
+  --mention: oklch(0.52 0.19 264);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -84,13 +91,20 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
+  /* The sidebar surface is the one lavender field in the app, on the same hue
+     as `--mention` above -- and on the hue shadcn's own `--sidebar-primary` was
+     already using in dark, which is where 264 came from. The tint is what makes
+     the panel read as a different thing from the conversation beside it: no
+     shadow, no second border. Only the surface and its own edge are tinted --
+     the boxes sitting on it keep the neutral card colour, so the panel reads as
+     one field with things on it rather than as lavender stacked on lavender. */
+  --sidebar: oklch(0.972 0.014 264);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0.9 0.035 264);
   --sidebar-ring: oklch(0.708 0 0);
 }
 
@@ -111,6 +125,7 @@
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
+    --mention: oklch(0.78 0.14 264);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
@@ -119,13 +134,13 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
+    --sidebar: oklch(0.225 0.03 264);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-border: oklch(0.72 0.09 264 / 25%);
     --sidebar-ring: oklch(0.556 0 0);
   }
 }
