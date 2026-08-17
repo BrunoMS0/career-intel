@@ -1756,6 +1756,21 @@ with the plugins     401 files, 16,137 KB
 without              12 files,   1,460 KB
 ```
 
+**The guardrail's refusal now looks like what it is.** 8 of the 46 questions
+never reach the model, come back in half a second with a fixed string, and used
+to render identically to a forty-second answer. `isRefusal()` sits next to
+`REFUSAL` in `lib/guardrail.ts` and matches it exactly; the transcript swaps the
+message for chrome — dashed border, icon, "Outside the indexed documents" — so
+nobody reads a threshold decision as the model's opinion.
+
+Exact match is the whole rule, and the two tests say why. The route writes
+`REFUSAL` as one delta and never calls the model, so it arrives byte for byte;
+and the prompt refuses far more questions than the threshold does, in its own
+words and with citations. Those are answers and keep looking like answers —
+"That is outside what I can answer." is the injection being declined by the
+prompt after 15 sections of excerpts reached the model, which is a different
+event from the question never being searched.
+
 A fenced block still renders, just unhighlighted. `AI Elements` also ships
 `shimmer` polymorphic over an `as` prop nothing passes, caching
 `motion.create(element)` in a module-level Map that

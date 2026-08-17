@@ -1,7 +1,8 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isReasoningUIPart, isTextUIPart } from "ai";
+import { DefaultChatTransport, isReasoningUIPart, isTextUIPart, type UIMessage } from "ai";
+import { SearchXIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import {
@@ -15,6 +16,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
+import { isRefusal } from "@/lib/guardrail";
 import { applyMention, mentionQuery, suggest } from "@/lib/mention";
 
 export type DocumentSummary = {
@@ -36,6 +38,33 @@ const SUGGESTIONS = [
   "How does my experience align with Job #4?",
   "Which of these roles fits me best, and why?",
 ];
+
+/** Everything the model said, with the reasoning left out. */
+const answerText = (message: UIMessage) =>
+  message.parts
+    .filter(isTextUIPart)
+    .map((part) => part.text)
+    .join("");
+
+/**
+ * The guardrail's refusal, which is not an answer and should not look like one.
+ *
+ * It is a different event from the rest of the transcript: no model ran, the
+ * text is fixed, and it arrives in half a second where an answer takes forty or
+ * more. Rendered as chrome rather than as speech, so nobody reads it as the
+ * model's opinion about the question.
+ */
+function Refusal({ text }: { text: string }) {
+  return (
+    <div className="flex gap-3 rounded-lg border border-dashed bg-muted/40 px-4 py-3">
+      <SearchXIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <div className="space-y-1">
+        <p className="font-medium">Outside the indexed documents</p>
+        <p className="text-muted-foreground">{text}</p>
+      </div>
+    </div>
+  );
+}
 
 export function Workspace({ documents }: { documents: DocumentSummary[] }) {
   const { messages, sendMessage, status, error } = useChat({
@@ -80,31 +109,39 @@ export function Workspace({ documents }: { documents: DocumentSummary[] }) {
               </div>
             )}
 
-            {messages.map((message) => (
-              <Message key={message.id} from={message.role}>
-                <MessageContent>
-                  {message.parts.map((part, i) => {
-                    // Gemma spends most of a request here -- measured at 3.2s to
-                    // the first reasoning token against 43.7s to the first text
-                    // one, 5,928 characters against 650. It was always in the
-                    // stream (`sendReasoning` defaults to true) and always
-                    // discarded, which is what made the wait look like a stall.
-                    if (isReasoningUIPart(part)) {
-                      return (
-                        <Reasoning key={i} isStreaming={part.state === "streaming"}>
-                          <ReasoningTrigger />
-                          <ReasoningContent>{part.text}</ReasoningContent>
-                        </Reasoning>
-                      );
-                    }
-                    if (isTextUIPart(part)) {
-                      return <MessageResponse key={i}>{part.text}</MessageResponse>;
-                    }
-                    return null;
-                  })}
-                </MessageContent>
-              </Message>
-            ))}
+            {messages.map((message) => {
+              const answer = answerText(message);
+
+              return (
+                <Message key={message.id} from={message.role}>
+                  <MessageContent>
+                    {isRefusal(answer) ? (
+                      <Refusal text={answer} />
+                    ) : (
+                      message.parts.map((part, i) => {
+                        // Gemma spends most of a request here -- measured at 3.2s
+                        // to the first reasoning token against 43.7s to the first
+                        // text one, 5,928 characters against 650. It was always in
+                        // the stream (`sendReasoning` defaults to true) and always
+                        // discarded, which is what made the wait look like a stall.
+                        if (isReasoningUIPart(part)) {
+                          return (
+                            <Reasoning key={i} isStreaming={part.state === "streaming"}>
+                              <ReasoningTrigger />
+                              <ReasoningContent>{part.text}</ReasoningContent>
+                            </Reasoning>
+                          );
+                        }
+                        if (isTextUIPart(part)) {
+                          return <MessageResponse key={i}>{part.text}</MessageResponse>;
+                        }
+                        return null;
+                      })
+                    )}
+                  </MessageContent>
+                </Message>
+              );
+            })}
 
             {status === "submitted" && (
               <p className="text-sm text-muted-foreground">Searching…</p>

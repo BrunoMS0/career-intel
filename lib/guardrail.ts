@@ -40,6 +40,18 @@ export const REFUSAL =
   "indexed resume and job postings — ask about your fit for a role, what a " +
   "posting requires, or what it says about pay, location or process.";
 
+/**
+ * Whether an assistant reply is this module's canned refusal rather than an
+ * answer, so the screen can say which one it is.
+ *
+ * An exact match on purpose. The chat route writes REFUSAL as one delta and
+ * never calls the model, so the text arrives byte for byte -- and a model that
+ * declines a question does so in its own words, which is a different event the
+ * prompt owns and the reader should still see as a normal answer. Living beside
+ * the constant is the whole point: edit one and the test below fails.
+ */
+export const isRefusal = (text: string) => text.trim() === REFUSAL;
+
 export type RetrievalAssessment = {
   /** Distance of the nearest chunk. Null when nothing is indexed at all. */
   top: number | null;
