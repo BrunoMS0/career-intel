@@ -47,6 +47,9 @@ https://github.com/BrunoMS0/career-intel
   Re-run it after re-ingesting; nothing detects that it was not
 - `lib/mention.ts` — the "/" picker's rule: which token is a mention, which
   postings it offers, what text replaces it. Pure, so `pnpm test` covers it
+- `lib/citation.ts` — how a `[Job #4 — EXPERIENCE]` bracket is displayed: which
+  ones resolve to an indexed document and what a chip is allowed to claim. Pure,
+  display only, and it never touches the string the prompt asked the model for
 - `lib/guardrail.ts` — the 0.40 threshold and the refusal text, kept free of db
   imports so the deterministic suite can test it with injected distances
 - `lib/ingest.ts` — parse, chunk, embed, store in one transaction
@@ -77,6 +80,7 @@ https://github.com/BrunoMS0/career-intel
 
 ```
 docker compose up -d                  # Postgres + pgvector
+docker compose --profile app up -d --build   # + the app in a container, :3000
 pnpm dev                              # app on :3000
 pnpm test                             # chunker and pdf tests
 pnpm inspect <file.pdf> [--text]      # how a PDF chunks under unpdf, without indexing it
@@ -311,7 +315,11 @@ into a structure would introduce the normalisation failure it was meant to
 prevent.
 
 **The reranker was measured and it loses as specified — phase 7. Not
-connected.** `lib/rerank.ts` scores the bi-encoder's top 10 per document with
+connected** *(true when written, and no longer: phase 8c shipped the scoped
+variant behind `NARROW`, so `retrieve()` does call Cohere whenever
+`resolveScope` resolves. Read the phase 8c entry before acting on this one —
+this paragraph describes the rule that reranks* everything*, which is still the
+one that lost.)* `lib/rerank.ts` scores the bi-encoder's top 10 per document with
 Cohere `rerank-v3.5` and applies the same budget to the new order. `pnpm eval
 --rerank` caches the scores in `eval/rerank.json` aligned to the same snapshot
 as the distances, so both rules are replayed over identical numbers, nothing was
@@ -1682,11 +1690,236 @@ that asserts on "Job #N" kept working. Showing the real name in the UI and in
 citations is now a rename with no measurement behind it — and it would still
 invalidate `eval/answers.json`, since the citation contract prints the label.
 
-What is left: the UI polish and the app Dockerfile that were always phase 6, the
-markdown rendering the answers still do not do, and an upload form that can set
-company and role title so a ninth document does not arrive identity-less. The
-"/" picker above already covers the part of this phase that users would feel —
-they pick a posting by its real name and never have to know it is Job #3.
+What is left: the UI polish and the app Dockerfile that were always phase 6, and
+an upload form that can set company and role title so a ninth document does not
+arrive identity-less. The "/" picker above already covers the part of this phase
+that users would feel — they pick a posting by its real name and never have to
+know it is Job #3.
+
+**Done: shadcn/ui and AI Elements are in, and the answers render markdown.**
+`components.json` is `radix-nova`, components live in `components/ui` and
+`components/ai-elements`, and `lib/utils.ts` holds `cn()`. Three AI Elements were
+added — `message`, `conversation`, `reasoning` — and the transcript in
+`app/workspace.tsx` is built from them. Nothing about the route, the prompt or
+the citation contract moved, so neither cache was invalidated.
+
+Two things worth knowing before adding more of either library:
+
+- **The catalogue does not match what a plan written from memory expects.**
+  `Response` no longer exists on its own; markdown rendering is `MessageResponse`
+  inside `message`, and it needs `@source "../node_modules/streamdown/dist/*.js"`
+  in `globals.css` or the markdown comes out unstyled — which reads as the
+  component failing rather than as missing CSS. `Actions` and `Branch` are
+  likewise folded into `message`, and `Loader` is gone (it 308s to shadcn's
+  `spinner`). `registry.ai-sdk.dev/<name>.json` lists a component's real
+  dependencies without installing anything, which is the cheap way to check.
+- **`shadcn init` switches dark mode from the system to a `.dark` class.** Every
+  `dark:` utility already in the tree silently stops following the system, and
+  nothing fails. `@custom-variant dark (@media (prefers-color-scheme: dark))`
+  plus the token block under the same media query restores the old behaviour. The
+  cost is that `MessageContent`'s `is-user:dark` goes inert, so the user bubble
+  is `bg-secondary` instead of inverted — worth less than a working dark mode.
+  It also finally fixed the font: `layout.tsx` had always loaded Geist through
+  `next/font` while `body { font-family: Arial }` in `globals.css` won.
+
+**The reasoning was in the stream the whole time, and the plan's premise for
+excluding it was wrong.** It had been written down that `gemma-4-31b-it` emits no
+reasoning tokens and that the stream does not carry them. Both are false:
+`sendReasoning` defaults to **true** in `toUIMessageStreamResponse()`, and
+`app/workspace.tsx` was filtering the parts out with `isTextUIPart`. Measured
+against the real route, one question:
+
+```
+ms to the first part of each type, POST /api/chat
+  reasoning-start / reasoning-delta      3,243
+  reasoning-end / text-start             43,666
+  finish                                47,537
+
+reasoning 5,928 chars      text 650 chars
+```
+
+`reasoning-end` and `text-start` share a timestamp, every time — the text begins
+when the thinking ends. So the wait was never 3 seconds to the first token; it
+was 3 seconds to the first token and **43 seconds to the first token the screen
+drew**, with 90% of the stream discarded. Two questions rendered end to end came
+back "Thought for 41 seconds" and "Thought for 118 seconds", which is also the
+honest range for how long an answer takes.
+
+Rendering it changes no text and invalidates nothing. Turning the thinking *off*
+would be a different decision, and it would invalidate `eval/answers.json`.
+
+It also explains a blank assistant bubble seen before the change: a request whose
+reasoning had started but whose text had not produced an `<article>` with nothing
+in it, no error and no spinner.
+
+**The plugin trim is the one measurable cost saving here.** AI Elements wires
+`{ cjk, code, math, mermaid }` into every `Streamdown`, which is shiki, katex and
+mermaid in the client bundle, for answers that are bullets and bold and a prompt
+that asks for nothing else. Dropped from `MessageResponse` and `ReasoningContent`
+and the four packages removed, `rm -rf .next && pnpm build` either way:
+
+```
+                     emitted client chunks
+with the plugins     401 files, 16,137 KB
+without              12 files,   1,460 KB
+```
+
+**The guardrail's refusal now looks like what it is.** 8 of the 46 questions
+never reach the model, come back in half a second with a fixed string, and used
+to render identically to a forty-second answer. `isRefusal()` sits next to
+`REFUSAL` in `lib/guardrail.ts` and matches it exactly; the transcript swaps the
+message for chrome — dashed border, icon, "Outside the indexed documents" — so
+nobody reads a threshold decision as the model's opinion.
+
+Exact match is the whole rule, and the two tests say why. The route writes
+`REFUSAL` as one delta and never calls the model, so it arrives byte for byte;
+and the prompt refuses far more questions than the threshold does, in its own
+words and with citations. Those are answers and keep looking like answers —
+"That is outside what I can answer." is the injection being declined by the
+prompt after 15 sections of excerpts reached the model, which is a different
+event from the question never being searched.
+
+**Done: citations are chips, and the label survives inside them.** `lib/citation.ts`
+rewrites `[Job #4 — EXPERIENCE]` into a markdown link whose text names the
+posting and whose title is the bracket the model actually wrote; `components.a`
+on `MessageResponse` renders it as a chip. Nothing reaches the server, nothing
+reaches the prompt, and the citation contract is untouched — this is display
+only, so `eval/answers.json` is not invalidated.
+
+Two rules in it that are not obvious and are tested:
+
+- **A bracket naming no indexed document stays plain text.** A chip is a claim
+  that the source resolved, and phase 8b already measured the model inventing
+  `Job #6 — Requirements`. Dressing an invented citation as a resolved one hides
+  the one failure this repo has proven the model commits.
+- **The chip keeps the label rather than replacing it**, which is the opposite of
+  what was built first. Asked what Job #2 pays, the model answers "Job #2 pays
+  $120,000 – $155,000" *in prose* and cites the posting — so a chip reading
+  "eJam — …" contradicts the sentence carrying it, and on a touch screen the
+  title attribute that would reconcile them never appears. `Job #4 (Kargo) —
+  EXPERIENCE` costs six characters and needs no hover. Found by asking a
+  question the three cached ones did not cover.
+
+**Done: copy and ask-again, and both are narrower than they look.** `MessageActions`
+sits under an assistant answer once it is finished. Three conditions on it, each
+of which is the interesting part:
+
+- **Copy puts the answer on the clipboard as the model wrote it**, brackets and
+  all -- `[Job #2 — Mid-Level AI Product / Creative-Tools Engineer]`, not the
+  `Job #2 (eJam) — …` the chip displays. The parenthesised company is a reading
+  aid; the label is what the corpus, `query_logs` and every eval expectation
+  speak, so a citation pasted somewhere else stays traceable. Verified by
+  intercepting `writeText`: the screen and the clipboard genuinely differ.
+- **A refusal gets no actions at all.** Retrying one recomputes the same distance
+  and returns the same fixed string without a model call, so the button would be
+  a no-op dressed as a choice.
+- **Ask-again only on the newest answer**, because `regenerate({ messageId })`
+  on an older one drops every turn after it with nothing on screen saying so.
+
+`regenerate` needed no route change, which was worth checking rather than
+assuming: the trigger changes to `regenerate-message` but the request still
+carries the same last user message, so `latestQuestion()` finds the same text.
+Confirmed in `query_logs` -- the retry logged "How much does Job #2 pay?" at
+0.3296, the same question and the same distance, and replaced the answer in place
+instead of appending a turn.
+
+**Rendering markdown exposed something the raw transcript had been hiding: the
+model sometimes writes a citation as inline code.** ``  `[Job #1 — WHAT YOU'LL
+BRING]` `` rather than the bare bracket the prompt asks for, on some answers and
+not others. It cost nothing while everything was plain text, and it broke the
+chips outright — markdown parses nothing inside a code span, so the rewrite
+produced a code chip containing the raw link syntax, `[Job #1 (Gamma) — WHAT
+YOU'LL BRING](#cite "…")`, which is worse than the brackets it replaced.
+
+`linkCitations` eats a symmetric backtick pair around a citation, because the
+backticks are the model reaching for exactly what a chip is. A code span that is
+not a citation stays code, and a lone backtick does not pair across the sentence.
+Found by asking a question the earlier checks had not used, not by reading the
+rule.
+
+**Done: the openers are built from the corpus.** They were two constants naming
+Job #1 and Job #4, which is fine until someone uploads a different corpus and the
+app greets them with two questions its own guardrail refuses. `suggestionsFor()`
+reads the indexed postings; with none indexed it returns nothing and the empty
+state says so instead of offering openers that cannot work. The composer
+placeholder lost its hardcoded label for the same reason.
+
+Labels rather than company names in those openers, deliberately: both resolve
+scope since phase 7, and the labelled forms are the ones measured clean 3 runs
+out of 3 while `twin-align-golden`, the same question naming the company, still
+flips. The "/" picker is where the real names belong.
+
+**AI Elements' `Suggestion` was not installed**, and the reason generalises. It
+is the same shadcn `Button` inside a horizontally scrolling `ScrollArea` whose
+scrollbar is `hidden`. Three questions of this length come to roughly a thousand
+pixels against a ~600px column, so two of the three would sit off-screen behind a
+bar nobody can see. Wrapped buttons keep all three visible and save a dependency
+(`scroll-area`). Check what a registry component actually does before taking it;
+`registry.ai-sdk.dev/<name>.json` carries the source.
+
+**Done: the periphery, on tokens.** `card`, `input`, `label`, `radio-group` and
+`spinner` were added — five component files and **no new npm dependency**, since
+they all sit on the `radix-ui` package `init` already pulled. The uploader is a
+`Card` with a title it never had, the kind picker is a radio pair rather than a
+`select`, and every hardcoded `neutral-*`, `red-*` and `bg-white` in
+`app/workspace.tsx` is gone. That last part is what makes the dark mode decision
+above stop mattering: the sidebar, the composer and the "/" menu now read from
+`bg-popover`, `bg-accent`, `text-muted-foreground` and `border-input`, which flip
+with the tokens instead of with a `dark:` prefix each.
+
+The radio pair is the one swap worth justifying, since a `select` is native and
+free: there are exactly two options and choosing one *changes the form* — a
+posting shows company and role title, a resume does not — so hiding half the
+decision behind a click was the wrong trade. The thing to check when replacing a
+native control is that the form still submits, and it does: Radix mirrors the
+choice into a hidden input, so `new FormData(form)` still carries exactly one
+`kind`, and it follows the selection (`job` → `resume`, verified in the browser,
+with `getAll` to be sure both radios are not submitting at once).
+
+`Input` also had to survive the composer's `ref`, which the "/" picker uses to
+put the caret back after inserting a label. It does — React 19 forwards `ref` as
+an ordinary prop through a plain function component — and the whole flow was
+re-run in the browser: "/aff" offers Job #3, picking it writes "what about
+Job #3 ", caret at 18, focus back in the box, menu closed.
+
+**Skeleton was not added, because there is no loading state to fill.** The
+document list is server-rendered under `force-dynamic`, so the browser never
+holds an empty version of it; the only client-side gap is the `router.refresh()`
+after an upload, which lands in a few hundred milliseconds at the end of a
+minute-long ingest the button already spent spinning. A skeleton there would be
+decoration.
+
+**Done: the app runs in a container, and it is behind a profile.** `Dockerfile`
+is three stages on `node:22-alpine` with `output: "standalone"` in
+`next.config.ts`, which is what keeps `llama-cloud-services`, `unpdf` and the
+rest of `node_modules` out of the runtime layer — **212MB**. The compose service
+is `profiles: ["app"]`, so `docker compose up -d` still brings up Postgres alone
+and `pnpm dev` stays the loop; the container is
+`docker compose --profile app up -d --build`.
+
+Two things that would have bitten and are commented where they are:
+
+- **`lib/db.ts` throws at import when `DATABASE_URL` is unset, and `next build`
+  imports it** while collecting page data. It only works locally because Next
+  reads `.env`, which `.dockerignore` deliberately excludes. The build stage sets
+  a placeholder URL; postgres.js connects lazily so it is never dialled.
+- **The `DATABASE_URL` in `.env` is wrong inside the network.** It names the port
+  Postgres is *published* on for the host (`DB_PORT`, 5544 here); from another
+  container the service is `db` on 5432. Compose sets it explicitly rather than
+  passing the host one through.
+
+Verified against the running Postgres: `/api/health` returns
+`{"ok":true,"pgvector":"0.8.6","documents":8,"googleKey":true}` and the page
+renders with Geist, the dark tokens, all 8 documents, the derived openers and the
+radio pair — so the fonts, the CSS and the client bundle all made it into the
+traced output.
+
+A fenced block still renders, just unhighlighted. `AI Elements` also ships
+`shimmer` polymorphic over an `as` prop nothing passes, caching
+`motion.create(element)` in a module-level Map that
+`react-hooks/static-components` fails the build over; `motion.p` directly is the
+whole of what it was asked for. `motion` itself is still a dependency for one
+shimmering label and a CSS keyframe would replace it — not done.
 
 Known and deliberate, not yet fixed:
 
@@ -1711,7 +1944,9 @@ Known and deliberate, not yet fixed:
 - Retrieval runs against the latest question only; a follow-up leaning on the
   previous turn retrieves against the wrong text. The guardrail inherits this:
   a follow-up is assessed on the wrong question's distances.
-- Answers render as plain text, so markdown shows raw `*` and `###`.
+- A citation chip carries no excerpt, because the retrieved sections are not on
+  the stream. Putting them there is a change to the answer path and wants
+  measuring first; until then a chip says which section, never what it said.
 - `query_logs` grows without bound and nothing reads it yet.
 - `query_logs.answered` is written before the model call, so it records "the
   guardrail let this through", not "the user got an answer". Three identical

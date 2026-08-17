@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assessRetrieval, WEAK_DISTANCE } from "./guardrail.ts";
+import { assessRetrieval, isRefusal, REFUSAL, WEAK_DISTANCE } from "./guardrail.ts";
 
 // Distances here are injected, never embedded. The real ones come from a hosted
 // model that can move without notice, so asserting on them would make this suite
@@ -45,4 +45,23 @@ test("the nearest section decides, whatever order they arrive in", () => {
 
 test("nothing indexed is weak, not a crash", () => {
   assert.deepEqual(assessRetrieval([]), { top: null, spread: null, weak: true });
+});
+
+test("the canned refusal is recognised as one", () => {
+  // The screen marks a guardrail refusal differently from an answer, and this is
+  // the only thing telling them apart. Editing REFUSAL without editing isRefusal
+  // would leave the marking silently off, which nothing else would report.
+  assert.equal(isRefusal(REFUSAL), true);
+  assert.equal(isRefusal(`${REFUSAL}\n`), true);
+});
+
+test("a model declining in its own words is still an answer", () => {
+  // The prompt refuses far more questions than the threshold does, and it does
+  // so with reasoning and citations. Those are answers -- the reader wants to
+  // see what was looked for, not a badge saying the question was off-topic.
+  assert.equal(
+    isRefusal("The documents do not state a dress code for Job #1. [Job #1 — BENEFITS]"),
+    false,
+  );
+  assert.equal(isRefusal("That is outside what I can answer."), false);
 });

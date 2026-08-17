@@ -21,5 +21,32 @@ services:
       timeout: 3s
       retries: 10
 
+  # Behind a profile, so `docker compose up -d` still brings up Postgres alone
+  # and `pnpm dev` stays the development loop. Run the containerised app with
+  # `docker compose --profile app up -d --build`.
+  app:
+    build: .
+    profiles: ["app"]
+    environment:
+      # Not the DATABASE_URL from .env: that one points at the port Postgres is
+      # published on for the host. Inside the compose network the service is
+      # reachable as `db` on 5432, whatever DB_PORT says.
+      DATABASE_URL: postgres://postgres:postgres@db:5432/career_intel
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:?set it in .env}
+      CHAT_MODEL: ${CHAT_MODEL:-gemma-4-31b-it}
+      # Required, not optional: NARROW is on in lib/retrieval.ts, so any question
+      # naming a posting reranks its candidates through Cohere before the budget.
+      # Without this the route 500s on exactly those questions -- which is how
+      # the container found that the app has a second hosted provider at runtime.
+      COHERE_API_KEY: ${COHERE_API_KEY:?set it in .env}
+      RERANK_MODEL: ${RERANK_MODEL:-rerank-v3.5}
+      # Optional: ingestion falls back to unpdf when this is empty.
+      LLAMA_CLOUD_API_KEY: ${LLAMA_CLOUD_API_KEY:-}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
